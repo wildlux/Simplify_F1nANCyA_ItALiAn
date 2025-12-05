@@ -99,8 +99,8 @@ class AIHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
 
 def run_server():
-    with socketserver.TCPServer(("", 5001), AIHandler) as httpd:
-        print("🚀 Assistente AI Backend avviato su porta 5001")
+    with socketserver.TCPServer(("", 5002), AIHandler) as httpd:
+        print("🚀 Assistente AI Backend avviato su porta 5002")
         print("🌐 Frontend: http://localhost:8080")
         httpd.serve_forever()
 
