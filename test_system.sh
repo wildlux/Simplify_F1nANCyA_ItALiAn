@@ -82,10 +82,10 @@ fi
 # Test 7: Verifica porte libere
 echo ""
 echo "7. Verifica porte..."
-if lsof -i :5000 >/dev/null 2>&1; then
-    echo "⚠️  Porta 5000 già in uso"
+if lsof -i :5002 >/dev/null 2>&1; then
+    echo "⚠️  Porta 5002 già in uso"
 else
-    echo "✅ Porta 5000 libera"
+    echo "✅ Porta 5002 libera"
 fi
 
 if lsof -i :8080 >/dev/null 2>&1; then
@@ -101,5 +101,5 @@ echo "Il sistema è pronto per l'uso."
 echo "Avvia con: ./start.sh"
 echo ""
 echo "Frontend: http://localhost:8080"
-echo "Backend: http://localhost:5000"
+echo "Backend: http://localhost:5002"
 echo "API Key: demo_key_123"

@@ -91,13 +91,13 @@ cd ..
 sleep 3
 
 # Verifica Backend
-if ! curl -s http://localhost:5001/api/health > /dev/null 2>&1; then
+if ! curl -s http://localhost:5002/api/health > /dev/null 2>&1; then
     error "Backend non risponde - controlla logs/backend.log"
     kill $BACKEND_PID 2>/dev/null || true
     exit 1
 fi
 
-success "Backend avviato (porta 5001)"
+success "Backend avviato (porta 5002)"
 
 # Avvia Frontend
 log "Avvio Frontend..."
@@ -125,8 +125,8 @@ echo -e "${GREEN}║         🎉 SISTEMA AVVIATO CON SUCCESSO!        ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "${GREEN}🌐 Frontend:${NC} http://localhost:8080"
-echo -e "${GREEN}🔧 Backend:${NC}  http://localhost:5001"
-echo -e "${GREEN}📚 API Docs:${NC} http://localhost:5001/docs"
+echo -e "${GREEN}🔧 Backend:${NC}  http://localhost:5002"
+echo -e "${GREEN}📚 API Docs:${NC} http://localhost:5002/docs"
 echo ""
 echo -e "${GREEN}🔑 API Key:${NC} demo_key_123"
 echo ""

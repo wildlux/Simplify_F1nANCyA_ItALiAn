@@ -34,10 +34,10 @@ else
     echo "  ❌ Ollama (11434): CHIUSA"
 fi
 
-if lsof -i :5000 > /dev/null 2>&1; then
-    echo "  ✅ Backend (5000): APERTA"
+if lsof -i :5002 > /dev/null 2>&1; then
+    echo "  ✅ Backend (5002): APERTA"
 else
-    echo "  ❌ Backend (5000): CHIUSA"
+    echo "  ❌ Backend (5002): CHIUSA"
 fi
 
 if lsof -i :8080 > /dev/null 2>&1; then
@@ -55,7 +55,7 @@ else
     echo "  ❌ Ollama API: KO"
 fi
 
-if curl -s http://localhost:5000/api/health > /dev/null 2>&1; then
+if curl -s http://localhost:5002/api/health > /dev/null 2>&1; then
     echo "  ✅ Backend API: OK"
 else
     echo "  ❌ Backend API: KO"
