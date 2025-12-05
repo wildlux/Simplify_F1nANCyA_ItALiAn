@@ -1733,6 +1733,7 @@ async function loadNews(category = 'economia') {
     document.querySelectorAll('.category-btn').forEach(btn => btn.classList.remove('active'));
     if (category === 'economia') document.getElementById('btnEconomia').classList.add('active');
     else if (category === 'sport') document.getElementById('btnSport').classList.add('active');
+    else if (category === 'generale') document.getElementById('btnGenerale').classList.add('active');
     else if (category === 'all') document.getElementById('btnAll').classList.add('active');
 
     const newsContent = document.getElementById('newsContent');
@@ -1772,6 +1773,7 @@ function displayNews(news, category = 'economia') {
     const categoryEmoji = {
         'economia': '📰',
         'sport': '⚽',
+        'generale': '🌍',
         'all': '📄'
     };
 
@@ -1781,7 +1783,7 @@ function displayNews(news, category = 'economia') {
 
     html += '<div class="news-list">';
     news.forEach(item => {
-        const categoryIcon = item.category === 'economia' ? '💰' : item.category === 'sport' ? '⚽' : '📰';
+        const categoryIcon = item.category === 'economia' ? '💰' : item.category === 'sport' ? '⚽' : item.category === 'generale' ? '🌍' : '📰';
         html += `
             <div class="news-item">
                 <h4><a href="${item.link}" target="_blank">${item.title}</a> <span class="category-badge">${categoryIcon}</span></h4>

@@ -486,6 +486,17 @@ def fetch_news(category_filter=None):
             'name': 'La Gazzetta dello Sport - Calciomercato',
             'url': 'https://www.gazzetta.it/rss/Calciomercato.xml',
             'category': 'sport'
+        },
+        # Fonti generaliste
+        {
+            'name': 'Google News Italia',
+            'url': 'https://news.google.com/rss?hl=it&gl=IT&ceid=IT:it',
+            'category': 'generale'
+        },
+        {
+            'name': 'Yahoo News Italia',
+            'url': 'https://it.news.yahoo.com/rss',
+            'category': 'generale'
         }
     ]
 
@@ -957,6 +968,8 @@ class AIHandler(http.server.BaseHTTPRequestHandler):
                         category_filter = ['economia']
                     elif category == 'sport':
                         category_filter = ['sport']
+                    elif category == 'generale':
+                        category_filter = ['generale']
                     else:
                         category_filter = [category]
 
