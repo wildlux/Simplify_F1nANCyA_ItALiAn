@@ -20,6 +20,7 @@ MODEL = "llama3.2:3b"
 SYSTEM_PROMPTS = {
     "finance": "Sei un consulente finanziario italiano. Rispondi in italiano.",
     "math": "Sei un assistente matematico. Mostra i calcoli.",
+    "develop": "Sei un assistente di programmazione esperto. Aiuta con Python, C++, JavaScript, Java e altri linguaggi. Fornisci codice ben commentato e spiegazioni chiare.",
     "general": "Sei un assistente AI utile. Rispondi in italiano."
 }
 

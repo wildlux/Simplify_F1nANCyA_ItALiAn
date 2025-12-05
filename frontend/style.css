@@ -43,16 +43,12 @@ body {
 
 /* Terminal Header */
 .terminal-header {
-    background: rgba(15, 23, 42, 0.95);
-    backdrop-filter: blur(10px);
+    background: var(--surface);
     border-bottom: 3px solid var(--primary);
     padding: 1.2rem 2rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    position: sticky;
-    top: 0;
-    z-index: 1000;
     box-shadow: var(--shadow);
 }
 
@@ -62,6 +58,33 @@ body {
     gap: 1rem;
     font-size: 1.5rem;
     font-weight: 700;
+}
+
+.menu-btn {
+    background: transparent;
+    border: none;
+    color: var(--text);
+    padding: 0.5rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 1.2rem;
+}
+
+.menu-btn:hover {
+    background: var(--bg-dark);
+    color: var(--primary);
+}
+
+/* Input buttons layout */
+.input-buttons {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+}
+
+.input-buttons .btn {
+    white-space: nowrap;
 }
 
 .logo-icon {
@@ -127,9 +150,21 @@ body {
     border: none;
 }
 
+.btn-secondary {
+    background: var(--surface-light);
+    border: 2px solid var(--border);
+    color: var(--text-secondary);
+}
+
+.btn-secondary:hover {
+    background: var(--surface);
+    border-color: var(--text-secondary);
+    color: var(--text);
+}
+
 /* Status Bar */
 .status-bar {
-    background: rgba(30, 41, 59, 0.8);
+    background: var(--surface);
     padding: 0.8rem 2rem;
     border-bottom: 1px solid var(--border);
     display: flex;
@@ -232,8 +267,7 @@ body {
 
 /* Input Area */
 .input-area {
-    background: rgba(15, 23, 42, 0.9);
-    backdrop-filter: blur(10px);
+    background: var(--surface);
     padding: 1.8rem 2rem;
     border-top: 1px solid var(--border);
     position: sticky;
@@ -278,9 +312,9 @@ body {
 }
 
 .quick-btn {
-    background: rgba(30, 41, 59, 0.7);
-    border: 1px solid var(--border-light);
-    color: var(--text-secondary);
+    background: var(--surface-light);
+    border: 1px solid var(--border);
+    color: var(--text);
     padding: 0.6rem 1.2rem;
     border-radius: 20px;
     cursor: pointer;
@@ -290,8 +324,8 @@ body {
 
 .quick-btn:hover {
     background: var(--surface);
-    color: var(--text);
-    border-color: var(--primary);
+    color: var(--primary);
+    border: 2px solid var(--text);
 }
 
 /* Typing Indicator */
@@ -580,7 +614,9 @@ code {
     --surface-light: #f1f5f9;
     --text: #1e293b;
     --text-secondary: #475569;
+    --text-muted: #64748b;
     --border: #cbd5e1;
+    --border-light: #e2e8f0;
 }
 
 .theme-neon {
@@ -602,6 +638,62 @@ code {
     --text: #00ff00;
     --border: #003300;
     font-family: 'Monaco', 'Courier New', monospace;
+}
+
+.theme-purple {
+    --primary: #8b5cf6;
+    --secondary: #a855f7;
+    --bg-dark: #1e1b4b;
+    --bg-darker: #0f0a19;
+    --surface: #2d1b69;
+    --surface-light: #3b2c7a;
+    --text: #f3f4f6;
+    --text-secondary: #c4b5fd;
+    --text-muted: #9ca3af;
+    --border: #5b21b6;
+    --border-light: #7c3aed;
+}
+
+.theme-orange {
+    --primary: #f97316;
+    --secondary: #ea580c;
+    --bg-dark: #431407;
+    --bg-darker: #1c0a00;
+    --surface: #7c2d12;
+    --surface-light: #9a3412;
+    --text: #fef3c7;
+    --text-secondary: #fed7aa;
+    --text-muted: #d97706;
+    --border: #c2410c;
+    --border-light: #ea580c;
+}
+
+.theme-solar-dark {
+    --primary: #268bd2;
+    --secondary: #859900;
+    --bg-dark: #002b36;
+    --bg-darker: #001b26;
+    --surface: #073642;
+    --surface-light: #0f4c5c;
+    --text: #839496;
+    --text-secondary: #586e75;
+    --text-muted: #657b83;
+    --border: #073642;
+    --border-light: #0f4c5c;
+}
+
+.theme-pink {
+    --primary: #ec4899;
+    --secondary: #f472b6;
+    --bg-dark: #2d1b2d;
+    --bg-darker: #1a0f1a;
+    --surface: #4a1a4a;
+    --surface-light: #6b2a6b;
+    --text: #fce7f3;
+    --text-secondary: #f9a8d4;
+    --text-muted: #db2777;
+    --border: #7c2d7c;
+    --border-light: #be185d;
 }
 
 /* Modal */

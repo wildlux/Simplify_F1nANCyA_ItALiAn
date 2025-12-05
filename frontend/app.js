@@ -14,7 +14,8 @@ let currentModel = 'llama3.2:3b';
 let prompts = {
     general: "Sei un assistente AI utile. Rispondi in italiano.",
     math: "Sei un assistente matematico. Mostra i calcoli.",
-    finance: "Sei un consulente finanziario italiano. Rispondi in italiano."
+    finance: "Sei un consulente finanziario italiano. Rispondi in italiano.",
+    develop: "Sei un assistente di programmazione esperto. Aiuta con Python, C++, JavaScript, Java e altri linguaggi. Fornisci codice ben commentato e spiegazioni chiare."
 };
 
 async function loadModels() {
@@ -779,6 +780,11 @@ function renderChart(chartData, chartType = 'line') {
 
     return `<div class="chart-container" style="margin: 1rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);">
         ${canvasHtml}
+        <div style="margin-top: 0.5rem; text-align: center;">
+            <button class="btn btn-secondary" onclick="printChart(this)" style="font-size: 0.8rem; padding: 0.3rem 0.6rem;">
+                <i class="fas fa-print"></i> Stampa
+            </button>
+        </div>
     </div>`;
 }
 
@@ -844,6 +850,24 @@ function parseChartRequest(text) {
         const func = match[1].trim();
         const data = generateFunctionData(func);
         if (data) return renderChart(data, 'line');
+    }
+
+    // Pattern per "creami un grafico" - default cartesiano
+    const simpleChartPattern = /creami un grafico/i;
+    if (simpleChartPattern.test(text)) {
+        // Default a grafico cartesiano (linea) con dati di esempio
+        const defaultData = {
+            labels: ['Punto 1', 'Punto 2', 'Punto 3', 'Punto 4', 'Punto 5'],
+            datasets: [{
+                label: 'Valori',
+                data: [10, 25, 15, 30, 20],
+                borderColor: 'rgb(75, 192, 192)',
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                tension: 0.1,
+                fill: false
+            }]
+        };
+        return renderChart(defaultData, 'line');
     }
 
     // Cerca pattern per richieste di grafici 2D
@@ -929,6 +953,33 @@ function generateFunctionData(func) {
     } catch (e) {
         console.log('Errore generazione dati funzione:', e);
         return null;
+    }
+}
+
+// ==================== STAMPA GRAFICI ====================
+function printChart(buttonElement) {
+    const chartContainer = buttonElement.closest('.chart-container');
+    if (chartContainer) {
+        // Crea una finestra di stampa temporanea
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(`
+            <html>
+                <head>
+                    <title>Grafico - Assistente AI</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 20px; }
+                        .chart-container { border: 1px solid #ccc; padding: 10px; margin: 10px 0; }
+                        canvas { max-width: 100%; height: auto; }
+                    </style>
+                </head>
+                <body>
+                    <h2>Grafico generato da Assistente AI</h2>
+                    ${chartContainer.innerHTML}
+                </body>
+            </html>
+        `);
+        printWindow.document.close();
+        printWindow.print();
     }
 }
 
@@ -1036,6 +1087,11 @@ function render3DChart(chartData) {
         <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.5rem;">
             Usa il mouse per ruotare, zoomare e spostare la vista 3D
         </p>
+        <div style="margin-top: 0.5rem; text-align: center;">
+            <button class="btn btn-secondary" onclick="printChart(this)" style="font-size: 0.8rem; padding: 0.3rem 0.6rem;">
+                <i class="fas fa-print"></i> Stampa
+            </button>
+        </div>
     </div>`;
 }
 
@@ -1264,7 +1320,7 @@ function updateSpeechButton() {
 
     if (speechEnabled) {
         if (speechBtn) {
-            speechBtn.innerHTML = '<i class="fas fa-volume-up"></i>';
+            speechBtn.innerHTML = '<i class="fas fa-volume-up"></i> Abilitata';
             speechBtn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
         }
         if (speechToggleBtn) {
@@ -1272,7 +1328,7 @@ function updateSpeechButton() {
         }
     } else {
         if (speechBtn) {
-            speechBtn.innerHTML = '<i class="fas fa-volume-mute"></i>';
+            speechBtn.innerHTML = '<i class="fas fa-volume-mute"></i> Disabilitata';
             speechBtn.style.background = '';
         }
         if (speechToggleBtn) {
@@ -1534,6 +1590,23 @@ function editMessage(buttonElement) {
     showNotification('Messaggio caricato nel campo input per modifica', 'info');
 }
 
+// ==================== TOGGLE AZIONI RAPIDE ====================
+function toggleQuickActions() {
+    const quickActions = document.querySelectorAll('.quick-actions .quick-btn:not(.always-visible)');
+    const toggleBtn = document.getElementById('toggleActionsBtn');
+    const isHidden = quickActions[0] && quickActions[0].style.display === 'none';
+
+    quickActions.forEach(btn => {
+        btn.style.display = isHidden ? 'inline-block' : 'none';
+    });
+
+    if (toggleBtn) {
+        toggleBtn.innerHTML = isHidden ?
+            '<i class="fas fa-eye-slash"></i> Nascondi' :
+            '<i class="fas fa-eye"></i> Mostra';
+    }
+}
+
 // ==================== UTILITIES ====================
 function showNotification(message, type = 'info') {
     const notification = document.createElement('div');
@@ -1570,8 +1643,9 @@ function changeMode(mode) {
     updateCurrentMode(mode);
     const modeNames = {
         'auto': 'Auto',
-        'math': 'Esempio di Python',
-        'finance': 'Finanza'
+        'math': 'Matematica',
+        'finance': 'Finanza',
+        'develop': 'Sviluppo'
     };
     showNotification(`Modalità cambiata: ${modeNames[mode]}`, 'success');
 }
@@ -1591,8 +1665,9 @@ function updateModelStatus(model) {
 function updateCurrentMode(mode) {
     const modeNames = {
         'auto': 'Auto',
-        'math': 'Esempio di Python',
-        'finance': 'Finanza'
+        'math': 'Matematica',
+        'finance': 'Finanza',
+        'develop': 'Sviluppo'
     };
     document.getElementById('currentMode').textContent = `Modalità: ${modeNames[mode]}`;
 }
@@ -1604,11 +1679,40 @@ function insertQuickText(text) {
 
 function newChat() {
     if (chatContainer.children.length > 0) {
-        if (confirm('Vuoi iniziare una nuova conversazione? La conversazione corrente sarà persa.')) {
+        // Salva la conversazione corrente prima di cancellarla
+        const messages = document.querySelectorAll('.message');
+        if (messages.length > 0) {
+            const conversation = {
+                id: 'conv_' + Date.now(),
+                timestamp: new Date().toISOString(),
+                messages: [],
+                mode: currentMode
+            };
+
+            messages.forEach(msg => {
+                const isUser = msg.classList.contains('user');
+                const content = msg.querySelector('.bubble').textContent.trim();
+                conversation.messages.push({
+                    sender: isUser ? 'user' : 'ai',
+                    content: content,
+                    time: msg.querySelector('.message-time') ? msg.querySelector('.message-time').textContent : ''
+                });
+            });
+
+            conversations.unshift(conversation);
+            if (conversations.length > 50) {
+                conversations = conversations.slice(0, 50);
+            }
+            localStorage.setItem('ai_conversations', JSON.stringify(conversations));
+        }
+
+        if (confirm('Vuoi iniziare una nuova conversazione? La conversazione corrente sarà salvata.')) {
             chatContainer.innerHTML = '';
-            showNotification('Nuova conversazione iniziata', 'success');
+            showNotification('Nuova conversazione iniziata - precedente salvata', 'success');
             showWelcomeMessage();
         }
+    } else {
+        showNotification('Nessuna conversazione da salvare', 'info');
     }
 }
 
@@ -1660,7 +1764,7 @@ function saveConversation(userMsg, aiMsg) {
 }
 
 function toggleTheme() {
-    const themes = ['dark', 'light', 'neon', 'hacker'];
+    const themes = ['dark', 'light', 'neon', 'hacker', 'purple', 'orange', 'solar-dark', 'pink'];
     const currentIndex = themes.indexOf(currentTheme);
     const nextIndex = (currentIndex + 1) % themes.length;
     currentTheme = themes[nextIndex];
@@ -1670,6 +1774,19 @@ function toggleTheme() {
     // Applica tema (semplice)
     document.body.className = `theme-${currentTheme}`;
     showNotification(`Tema cambiato: ${currentTheme}`, 'info');
+}
+
+function randomTheme() {
+    const themes = ['dark', 'light', 'neon', 'hacker', 'purple', 'orange', 'solar-dark', 'pink'];
+    let newTheme;
+    do {
+        newTheme = themes[Math.floor(Math.random() * themes.length)];
+    } while (newTheme === currentTheme); // Evita di scegliere lo stesso tema
+
+    currentTheme = newTheme;
+    localStorage.setItem('ai_theme', currentTheme);
+    document.body.className = `theme-${currentTheme}`;
+    showNotification(`Tema casuale: ${currentTheme}`, 'info');
 }
 
 // ==================== LOGIN ====================
@@ -1703,12 +1820,14 @@ function showSettings() {
     document.getElementById('generalPrompt').value = prompts.general;
     document.getElementById('mathPrompt').value = prompts.math;
     document.getElementById('financePrompt').value = prompts.finance;
+    document.getElementById('developPrompt').value = prompts.develop;
 }
 
 function savePrompts() {
     prompts.general = document.getElementById('generalPrompt').value;
     prompts.math = document.getElementById('mathPrompt').value;
     prompts.finance = document.getElementById('financePrompt').value;
+    prompts.develop = document.getElementById('developPrompt').value;
     localStorage.setItem('prompts', JSON.stringify(prompts));
     closeSettings();
     showNotification('Prompt salvati', 'success');
