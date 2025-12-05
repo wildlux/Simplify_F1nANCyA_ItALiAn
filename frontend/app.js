@@ -11,6 +11,17 @@ let isListening = false;
 let recognition = null;
 let cancelController = null;
 let currentModel = 'llama3.2:3b';
+let chart3dEngine = localStorage.getItem('chart3dEngine') || 'seaborn';
+let loadedChartData = null; // Dati caricati dal file
+
+// 🚀 OTTIMIZZAZIONI PERFORMANCE
+let requestQueue = [];
+let isProcessingRequest = false;
+let lastRequestTime = 0;
+const MIN_REQUEST_INTERVAL = 500;
+const MAX_RETRIES = 2;
+const frontendCache = new Map();
+const CACHE_SIZE = 50;
 let prompts = {
     general: "Sei un assistente AI utile. Rispondi in italiano.",
     math: "Sei un assistente matematico. Mostra i calcoli.",
@@ -20,7 +31,11 @@ let prompts = {
 
 async function loadModels() {
     try {
-        const response = await fetch(`${API_URL}/api/models`);
+        const response = await fetch(`${API_URL}/api/models`, {
+            headers: {
+                'X-API-Key': apiKey
+            }
+        });
         const data = await response.json();
         const select = document.getElementById('modelSelect');
         const currentValue = select.value; // Preserve current selection
@@ -148,13 +163,16 @@ async function connectToBackend() {
     updateConnectionStatus('connecting', 'Connessione in corso...');
 
     try {
-        const response = await fetch(`${API_URL}/api/health`);
+        const response = await fetch(`${API_URL}/api/health`, {
+            headers: {'X-API-Key': apiKey}
+        });
+
         if (response.ok) {
             const data = await response.json();
 
             isConnected = true;
             updateConnectionStatus('online', 'Connesso');
-            modelStatus.textContent = data.system?.model || 'llama3.2:3b';
+            modelStatus.textContent = data.model || 'llama3.2:3b';
 
             // Carica modelli
             await loadModels();
@@ -165,16 +183,32 @@ async function connectToBackend() {
                     showWelcomeMessage();
                 }
             }, 500);
-
         } else {
-            updateConnectionStatus('offline', 'Backend non raggiungibile');
+            // Gestisci errori di autenticazione
+            if (response.status === 401) {
+                const errorData = await response.json().catch(() => ({}));
+                console.error('🚫 Autenticazione fallita:', errorData);
+                showNotification(`API Key non valida: ${errorData.message || 'Controlla la chiave inserita'}`, 'error');
+                // Riapri modal di login
+                document.getElementById('loginModal').style.display = 'flex';
+                apiKey = null;
+                localStorage.removeItem('ai_api_key');
+            } else {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
         }
     } catch (error) {
-        updateConnectionStatus('offline', 'Errore di connessione');
-        console.error('Connection error:', error);
+        console.error('❌ Errore connessione backend:', error);
+        isConnected = false;
+        updateConnectionStatus('offline', 'Errore connessione');
+        showNotification(`Errore connessione: ${error.message}`, 'error');
 
-        // Retry dopo 5 secondi
-        setTimeout(connectToBackend, 5000);
+        // Riapri modal di login in caso di errore grave
+        if (error.message.includes('fetch')) {
+            setTimeout(() => {
+                document.getElementById('loginModal').style.display = 'flex';
+            }, 2000);
+        }
     }
 }
 
@@ -268,6 +302,9 @@ function addMessage(sender, content, showTime = true) {
             <button class="action-btn copy-btn" onclick="copyMessage(this)" title="Copia messaggio">
                 <i class="fas fa-copy"></i>
             </button>
+            <button class="action-btn retry-btn" onclick="retryMessage(this)" title="Rifai domanda">
+                <i class="fas fa-redo"></i>
+            </button>
         </div>
     ` : `
         <div class="message-actions">
@@ -331,9 +368,46 @@ async function sendMessage() {
         return;
     }
 
+    // Debouncing richieste
+    const now = Date.now();
+    if (now - lastRequestTime < MIN_REQUEST_INTERVAL) {
+        showWarning('Rallenta! Attendi un momento tra le richieste');
+        return;
+    }
+    lastRequestTime = now;
+
+    // 🚀 OTTIMIZZAZIONE 2: CACHE FRONTEND
+    const cacheKey = `${text}|${currentMode}|${currentModel}`;
+    if (frontendCache.has(cacheKey)) {
+        const cachedResponse = frontendCache.get(cacheKey);
+        addMessage('user', text);
+        userInput.value = '';
+        addMessage('ai', '⚡ ' + cachedResponse + '\n\n*(risposta dalla cache)*');
+        return;
+    }
+
     // Aggiungi messaggio utente
     addMessage('user', text);
     userInput.value = '';
+
+    // Controlla se è un comando di grafico 3D - gestisci localmente prima
+    const chart3DHtml = await handleChart3DCommand(text);
+    if (chart3DHtml) {
+        // Mostra il grafico 3D generato localmente
+        addMessage('ai', chart3DHtml + '\n\n🔍 Analizzo il grafico 3D per te...');
+
+        // Poi manda all'AI per l'analisi
+        await sendToAIForAnalysis(text, chart3DHtml);
+        return;
+    }
+
+    // Gestione coda richieste
+    if (isProcessingRequest) {
+        requestQueue.push(text);
+        showNotification('Richiesta in coda...', 'info');
+        return;
+    }
+    isProcessingRequest = true;
 
     // Mostra indicatore typing
     showTypingIndicator();
@@ -342,53 +416,86 @@ async function sendMessage() {
     cancelController = new AbortController();
     const signal = cancelController.signal;
 
-    try {
-        const response = await fetch(`${API_URL}/api/chat`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                text: text,
-                mode: currentMode,
-                model: currentModel,
-                prompts: prompts
-            }),
-            signal: signal
-        });
+    let retryCount = 0;
+    while (retryCount <= MAX_RETRIES) {
+        try {
+            const response = await fetch(`${API_URL}/api/chat`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': apiKey  // Best Practice: Header sicuro per API key
+                },
+                body: JSON.stringify({
+                    text: text,
+                    mode: currentMode,
+                    model: currentModel,
+                    prompts: prompts
+                }),
+                signal: signal
+            });
 
-        hideTypingIndicator();
-        cancelController = null;
+            hideTypingIndicator();
+            cancelController = null;
 
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-                const data = await response.json();
-
-                // Aggiungi risposta AI
-                addMessage('ai', data.response);
-
-                // Applica syntax highlighting ai blocchi di codice
-                setTimeout(highlightCode, 100);
-
-                // Leggi ad alta voce la risposta (se abilitato)
-                if (speechEnabled && speechSynthesis) {
-                    console.log('🎵 Leggendo risposta AI:', data.response.substring(0, 50) + '...');
-                    speakText(data.response);
-                } else {
-                    console.log('🔇 Sintesi vocale disabilitata o non supportata');
+            if (!response.ok) {
+                if (response.status === 429 && retryCount < MAX_RETRIES) {
+                    // Rate limit - aspetta e riprova
+                    retryCount++;
+                    const waitTime = Math.pow(2, retryCount) * 1000; // Backoff esponenziale
+                    showNotification(`Rate limit - Riprovo tra ${waitTime/1000}s...`, 'warning');
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
+                    continue;
                 }
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
 
-    } catch (error) {
-        hideTypingIndicator();
-        cancelController = null;
-        if (error.name === 'AbortError') {
-            addMessage('ai', 'Richiesta annullata.');
-        } else {
+            const data = await response.json();
+
+            // Aggiungi risposta AI
+            addMessage('ai', data.response);
+
+            // Salva in cache
+            if (frontendCache.size >= CACHE_SIZE) {
+                const firstKey = frontendCache.keys().next().value;
+                frontendCache.delete(firstKey);
+            }
+            frontendCache.set(cacheKey, data.response);
+
+            // Post-processing risposta
+            setTimeout(highlightCode, 100);
+            if (speechEnabled && speechSynthesis) {
+                console.log('🎵 Lettura risposta AI');
+                speakText(data.response);
+            }
+
+            break; // Successo, esci dal loop di retry
+
+        } catch (error) {
+            if (retryCount < MAX_RETRIES && !error.name === 'AbortError') {
+                retryCount++;
+                const waitTime = Math.pow(2, retryCount) * 1000;
+                showNotification(`Errore - Riprovo tra ${waitTime/1000}s... (${retryCount}/${MAX_RETRIES})`, 'warning');
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+                continue;
+            }
+
+            hideTypingIndicator();
+            cancelController = null;
+            showNotification(`Errore dopo ${retryCount + 1} tentativi: ${error.message}`, 'error');
             addMessage('ai', `❌ Errore: ${error.message}`);
-            console.error('Chat error:', error);
+            break;
         }
+    }
+
+    isProcessingRequest = false;
+
+    // 🚀 OTTIMIZZAZIONE 4: PROCESSA CODA RICHIESTE
+    if (requestQueue.length > 0) {
+        const nextRequest = requestQueue.shift();
+        setTimeout(() => {
+            userInput.value = nextRequest;
+            sendMessage();
+        }, MIN_REQUEST_INTERVAL);
     }
 }
 
@@ -1497,11 +1604,51 @@ function stopSpeechFromButton(buttonElement) {
     buttonElement.onclick = () => speakText(buttonElement);
 }
 
-function copyMessage(buttonElement) {
-    // Assicurati che buttonElement sia il button
-    if (buttonElement.tagName !== 'BUTTON') {
-        buttonElement = buttonElement.parentElement;
+
+
+function retryMessage(buttonElement) {
+    // Trova il messaggio AI corrente
+    const aiMessageDiv = buttonElement.closest('.message.ai');
+    if (!aiMessageDiv) {
+        showNotification('Errore: messaggio AI non trovato', 'error');
+        return;
     }
+
+    // Trova il messaggio utente precedente
+    const allMessages = document.querySelectorAll('.message');
+    let userMessageText = null;
+
+    for (let i = 0; i < allMessages.length; i++) {
+        if (allMessages[i] === aiMessageDiv) {
+            // Il messaggio precedente dovrebbe essere quello dell'utente
+            if (i > 0 && allMessages[i - 1].classList.contains('user')) {
+                const userMessageContent = allMessages[i - 1].querySelector('.message-content');
+                if (userMessageContent) {
+                    userMessageText = userMessageContent.innerText ||
+                                    userMessageContent.textContent ||
+                                    userMessageContent.innerHTML.replace(/<[^>]*>/g, '');
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!userMessageText || userMessageText.trim() === '') {
+        showNotification('Nessun messaggio utente trovato da ripetere', 'warning');
+        return;
+    }
+
+    // Rimuovi il messaggio AI corrente (opzionale, o lascialo per confronto)
+    aiMessageDiv.remove();
+
+    // Inserisci il testo nel campo input e invia
+    userInput.value = userMessageText.trim();
+    sendMessage();
+
+    showNotification('Domanda ripetuta all\'AI', 'info');
+}
+
+function copyMessage(buttonElement) {
     if (!buttonElement || buttonElement.tagName !== 'BUTTON') return;
 
     // Trova il contenuto del messaggio
@@ -1541,7 +1688,7 @@ function copyMessage(buttonElement) {
             buttonElement.style.color = '';
         }, 1000);
 
-        showNotification('Messaggio copiato negli appunti!', 'success');
+        showSuccess('Messaggio copiato negli appunti!');
     }).catch(err => {
         console.error('Errore copia:', err);
         showNotification('Errore nella copia del messaggio', 'error');
@@ -1590,29 +1737,31 @@ function toggleQuickActions() {
 
 // ==================== UTILITIES ====================
 function showNotification(message, type = 'info') {
+    const existing = document.querySelectorAll('.notification');
+    existing.forEach(n => n.remove());
+
     const notification = document.createElement('div');
-    notification.className = 'notification';
+    notification.className = `notification notification-${type}`;
 
-    let icon = 'ℹ️';
-    if (type === 'success') icon = '✅';
-    if (type === 'error') icon = '❌';
-    if (type === 'warning') icon = '⚠️';
-
+    const icons = {'success': '✓', 'error': '✗', 'warning': '⚠', 'info': 'ℹ'};
     notification.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 0.8rem;">
-            <span style="font-size: 1.2rem;">${icon}</span>
-            <span>${message}</span>
-        </div>
+        <span class="notification-icon">${icons[type] || 'ℹ'}</span>
+        <span class="notification-message">${message}</span>
+        <button class="notification-close" onclick="this.parentElement.remove()">×</button>
     `;
 
     document.body.appendChild(notification);
-
-    // Rimuovi dopo 5 secondi
+    setTimeout(() => notification.classList.add('show'), 10);
     setTimeout(() => {
-        notification.style.animation = 'slideInRight 0.3s ease reverse';
+        notification.classList.remove('show');
         setTimeout(() => notification.remove(), 300);
     }, 5000);
 }
+
+// Helper per notifiche comuni
+function showSuccess(message) { showNotification(message, 'success'); }
+function showError(message) { showNotification(message, 'error'); }
+function showWarning(message) { showNotification(message, 'warning'); }
 
 function scrollToBottom() {
     chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -1813,6 +1962,7 @@ function showSettings() {
     document.getElementById('mathPrompt').value = prompts.math;
     document.getElementById('financePrompt').value = prompts.finance;
     document.getElementById('developPrompt').value = prompts.develop;
+    document.getElementById('chart3dEngine').value = chart3dEngine;
 }
 
 function savePrompts() {
@@ -1820,9 +1970,14 @@ function savePrompts() {
     prompts.math = document.getElementById('mathPrompt').value;
     prompts.finance = document.getElementById('financePrompt').value;
     prompts.develop = document.getElementById('developPrompt').value;
+
+    // Salva motore grafici 3D
+    chart3dEngine = document.getElementById('chart3dEngine').value;
+    localStorage.setItem('chart3dEngine', chart3dEngine);
+
     localStorage.setItem('prompts', JSON.stringify(prompts));
     closeSettings();
-    showNotification('Prompt salvati', 'success');
+    showNotification('Impostazioni salvate', 'success');
 }
 
 function toggleSidebar() {
@@ -1861,42 +2016,1114 @@ function logout() {
 }
 
 function showChartMenu() {
-    addMessage('ai', `
-        <h3><i class="fas fa-chart-bar"></i> Generatore Grafici</h3>
+    document.getElementById('chartModal').style.display = 'block';
+    showLineChart(); // Mostra il primo grafico per default
+}
 
-        <div style="margin: 1rem 0;">
-            <h4>Grafici Disponibili:</h4>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.5rem; margin-top: 0.5rem;">
-                <button class="quick-btn" onclick="generateChart('line')" style="width: 100%;">
-                    <i class="fas fa-chart-line"></i> Linee
-                </button>
-                <button class="quick-btn" onclick="generateChart('bar')" style="width: 100%;">
-                    <i class="fas fa-chart-bar"></i> Barre
-                </button>
-                <button class="quick-btn" onclick="generateChart('pie')" style="width: 100%;">
-                    <i class="fas fa-chart-pie"></i> Torta
-                </button>
-                <button class="quick-btn" onclick="generateChart('scatter')" style="width: 100%;">
-                    <i class="fas fa-braille"></i> Dispersione
-                </button>
+function closeChartModal() {
+    document.getElementById('chartModal').style.display = 'none';
+}
+
+// ============================================
+// GESTIONE COMANDI GRAFICI 3D LOCALI
+// ============================================
+
+async function handleChart3DCommand(text) {
+    const lowerText = text.toLowerCase();
+
+    // Riconosci tutti i tipi di comandi grafici 3D
+    const chart3DPatterns = [
+        /grafico 3d/i,
+        /3d grafico/i,
+        /scatter 3d/i,
+        /superficie 3d/i,
+        /surface 3d/i,
+        /parametric.*3d/i,
+        /3d.*parametric/i
+    ];
+
+    const is3DCommand = chart3DPatterns.some(pattern => pattern.test(lowerText));
+
+    if (is3DCommand) {
+        // Riconosci il tipo specifico di grafico 3D
+        if (lowerText.includes('parametric') || lowerText.includes('parametrica')) {
+            return await generateParametric3DChart(text);
+        } else if (lowerText.includes('superficie') || lowerText.includes('surface')) {
+            return await generateSurface3DChart(text);
+        } else if (lowerText.includes('scatter') || lowerText.includes('dispersione')) {
+            return await generateScatter3DChart(text);
+        } else {
+            // Default: grafico parametrico
+            return await generateParametric3DChart(text);
+        }
+    }
+
+    return null; // Non è un comando grafico 3D
+}
+
+async function generateParametric3DChart(text) {
+    try {
+        // Estrai le funzioni parametriche dal testo
+        const funcMatch = text.match(/x\s*=\s*([^,]+),\s*y\s*=\s*([^,]+),\s*z\s*=\s*([^)\s]+)/i);
+        let func_x = 'cos(t)', func_y = 'sin(t)', func_z = 't';
+
+        if (funcMatch) {
+            func_x = funcMatch[1].trim();
+            func_y = funcMatch[2].trim();
+            func_z = funcMatch[3].trim();
+        }
+
+        // Genera dati parametrici
+        const t_range = [0, 4 * Math.PI];
+        const points = 200;
+        const t = [];
+        const x = [], y = [], z = [];
+
+        for (let i = 0; i < points; i++) {
+            const t_val = t_range[0] + (t_range[1] - t_range[0]) * i / (points - 1);
+            t.push(t_val);
+
+            // Valuta le funzioni in modo sicuro
+            try {
+                const x_val = evaluateMathFunction(func_x, t_val);
+                const y_val = evaluateMathFunction(func_y, t_val);
+                const z_val = evaluateMathFunction(func_z, t_val);
+
+                x.push(x_val);
+                y.push(y_val);
+                z.push(z_val);
+            } catch (e) {
+                // Se fallisce, genera dati casuali
+                x.push(Math.cos(t_val));
+                y.push(Math.sin(t_val));
+                z.push(t_val);
+            }
+        }
+
+        // Scegli il motore di rendering basato sulle impostazioni
+        if (chart3dEngine === 'plotly') {
+            return await generateParametric3DPlotly(func_x, func_y, func_z, x, y, z);
+        } else if (chart3dEngine === 'matplotlib') {
+            return await generateParametric3DMatplotlib(func_x, func_y, func_z, x, y, z);
+        } else if (chart3dEngine === 'seaborn') {
+            // Seaborn non disponibile, usa matplotlib come fallback
+            showWarning('Seaborn non disponibile, uso Matplotlib');
+            return await generateParametric3DMatplotlib(func_x, func_y, func_z, x, y, z);
+        }
+
+    } catch (error) {
+        console.error('Errore generazione grafico parametrico:', error);
+        return `<div style="color: var(--danger); padding: 1rem; border: 1px solid var(--danger); border-radius: var(--radius);">
+            ❌ Errore nella generazione del grafico parametrico: ${error.message}
+            <br><br>
+            <strong>Suggerimento:</strong> Prova con funzioni come "x=cos(t), y=sin(t), z=t"
+        </div>`;
+    }
+}
+
+async function generateParametric3DPlotly(func_x, func_y, func_z, x, y, z) {
+    const chartId = 'parametric-chart-' + Math.random().toString(36).substr(2, 9);
+    const chartHtml = `
+        <div style="margin: 1rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);">
+            <h4 style="margin-bottom: 0.5rem; color: var(--primary);">🎯 Grafico 3D Parametrico (Plotly)</h4>
+            <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                <strong>Funzioni:</strong> x = ${func_x}, y = ${func_y}, z = ${func_z}
+                <br><strong>Motore:</strong> Plotly (Interattivo, WebGL)
             </div>
+            <div id="${chartId}" style="width: 100%; height: 400px;"></div>
         </div>
+    `;
 
-        <div style="margin: 1rem 0;">
-            <h4>Come Richiedere Grafici:</h4>
-            <p>Puoi chiedere all'AI di creare grafici dicendo:</p>
-            <ul>
-                <li><code>"Crea un grafico a linee con dati: {...}"</code></li>
-                <li><code>"Mostra un grafico a barre dei dati: {...}"</code></li>
-                <li><code>"Disegna un grafico a torta con: {...}"</code></li>
-            </ul>
-        </div>
+    setTimeout(() => {
+        const trace = {
+            x: x,
+            y: y,
+            z: z,
+            mode: 'lines',
+            type: 'scatter3d',
+            line: {
+                color: z,
+                colorscale: 'Viridis',
+                width: 4
+            },
+            name: `Parametric: (${func_x}, ${func_y}, ${func_z})`
+        };
 
-        <div style="background: rgba(16, 185, 129, 0.1); padding: 1rem; border-radius: 8px; margin: 1rem 0;">
-            <h4><i class="fas fa-lightbulb"></i> Esempio:</h4>
-            <p><code>"Crea un grafico a linee con dati: {"labels": ["Gen", "Feb", "Mar"], "datasets": [{"label": "Vendite", "data": [10, 20, 30]}]}"</code></p>
-        </div>
-    `);
+        const layout = {
+            title: `Curva parametrica 3D: x=${func_x}, y=${func_y}, z=${func_z}`,
+            scene: {
+                xaxis: {title: 'X'},
+                yaxis: {title: 'Y'},
+                zaxis: {title: 'Z'},
+                camera: {
+                    eye: {x: 1.5, y: 1.5, z: 1.5}
+                }
+            },
+            plot_bgcolor: 'rgba(15, 23, 42, 0.5)',
+            paper_bgcolor: 'rgba(30, 41, 59, 0.8)',
+            font: {color: '#f8fafc'}
+        };
+
+        Plotly.newPlot(chartId, [trace], layout, {responsive: true});
+    }, 100);
+
+    return chartHtml;
+}
+
+async function generateParametric3DMatplotlib(func_x, func_y, func_z, x, y, z) {
+    try {
+        const response = await fetch(`${API_URL}/api/chart3d`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-API-Key': apiKey
+            },
+            body: JSON.stringify({
+                type: 'parametric3d',
+                func_x: func_x,
+                func_y: func_y,
+                func_z: func_z,
+                points: 200
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (data.error) {
+            throw new Error(data.error);
+        }
+
+        return `<div style="margin: 1rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);">
+            <h4 style="margin-bottom: 0.5rem; color: var(--primary);">📊 Grafico 3D Parametrico (Matplotlib)</h4>
+            <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                <strong>Funzioni:</strong> x = ${func_x}, y = ${func_y}, z = ${func_z}
+                <br><strong>Motore:</strong> Matplotlib (Classico, veloce)
+            </div>
+            ${render3DChart(data)}
+        </div>`;
+
+    } catch (error) {
+        console.error('Errore Matplotlib 3D:', error);
+        return `<div style="color: var(--danger); padding: 1rem; border: 1px solid var(--danger); border-radius: var(--radius);">
+            ❌ Errore Matplotlib 3D: ${error.message}
+        </div>`;
+    }
+}
+
+async function generateParametric3DSeaborn(func_x, func_y, func_z, x, y, z) {
+    try {
+        // Per Seaborn, usiamo il backend Matplotlib con styling Seaborn
+            const response = await fetch(`${API_URL}/api/matplotlib`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': apiKey
+                },
+            body: JSON.stringify({
+                type: 'parametric3d_seaborn',
+                func_x: func_x,
+                func_y: func_y,
+                func_z: func_z,
+                points: 200
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        return `<div style="margin: 1rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);">
+            <h4 style="margin-bottom: 0.5rem; color: var(--primary);">🎨 Grafico 3D Parametrico (Seaborn)</h4>
+            <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                <strong>Funzioni:</strong> x = ${func_x}, y = ${func_y}, z = ${func_z}
+                <br><strong>Motore:</strong> Seaborn (Statistico, elegante)
+            </div>
+            <img src="${data.image}" alt="Grafico 3D Parametrico Seaborn" style="max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: var(--radius);">
+        </div>`;
+
+    } catch (error) {
+        console.error('Errore Seaborn 3D:', error);
+        return `<div style="color: var(--danger); padding: 1rem; border: 1px solid var(--danger); border-radius: var(--radius);">
+            ❌ Errore Seaborn 3D: ${error.message}
+        </div>`;
+    }
+}
+
+async function generateGeneralChart(text) {
+    // Per ora, reindirizza al sistema esistente di parsing grafici
+    const chartHtml = parseChartRequest(text);
+    if (chartHtml) {
+        return chartHtml;
+    }
+
+        // Se non riconosce il formato, genera un grafico di esempio
+        const chartId = 'general-chart-' + Math.random().toString(36).substr(2, 9);
+        const generalChartHtml = `
+            <div style="margin: 1rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);">
+                <h4 style="margin-bottom: 0.5rem; color: var(--primary);">📊 Grafico Generato</h4>
+                <div id="${chartId}" style="width: 100%; height: 300px;"></div>
+            </div>
+        `;
+
+    setTimeout(() => {
+        // Genera dati casuali per dimostrare
+        const x = Array.from({length: 10}, (_, i) => i + 1);
+        const y = Array.from({length: 10}, () => Math.random() * 100);
+
+        const trace = {
+            x: x,
+            y: y,
+            type: 'scatter',
+            mode: 'lines+markers',
+            name: 'Dati generati',
+            line: {color: '#60a5fa', width: 3}
+        };
+
+        const layout = {
+            title: 'Grafico di esempio',
+            xaxis: {title: 'X'},
+            yaxis: {title: 'Y'},
+            plot_bgcolor: 'rgba(15, 23, 42, 0.5)',
+            paper_bgcolor: 'rgba(30, 41, 59, 0.8)',
+            font: {color: '#f8fafc'}
+        };
+
+        Plotly.newPlot(chartId, [trace], layout, {responsive: true});
+    }, 100);
+
+    return generalChartHtml;
+}
+
+async function generateSurface3DChart(text) {
+    try {
+        // Per ora usa dati di esempio per superficie 3D
+        const chartId = 'surface-chart-' + Math.random().toString(36).substr(2, 9);
+
+        if (chart3dEngine === 'plotly') {
+            const chartHtml = `
+                <div style="margin: 1rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);">
+                    <h4 style="margin-bottom: 0.5rem; color: var(--primary);">🌊 Superficie 3D (Plotly)</h4>
+                    <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                        <strong>Motore:</strong> Plotly (Interattivo, WebGL)
+                    </div>
+                    <div id="${chartId}" style="width: 100%; height: 400px;"></div>
+                </div>
+            `;
+
+            setTimeout(() => {
+                // Genera dati per superficie
+                const x = [], y = [], z = [];
+                const size = 25;
+
+                for (let i = 0; i < size; i++) {
+                    x.push(i - size/2);
+                    const row = [];
+                    for (let j = 0; j < size; j++) {
+                        if (i === 0) y.push(j - size/2);
+                        row.push(Math.sin(i/3) * Math.cos(j/3) + Math.random() * 0.1);
+                    }
+                    z.push(row);
+                }
+
+                const trace = {
+                    x: x,
+                    y: y,
+                    z: z,
+                    type: 'surface',
+                    colorscale: 'Viridis'
+                };
+
+                const layout = {
+                    title: 'Superficie 3D Interattiva',
+                    scene: {
+                        xaxis: {title: 'X'},
+                        yaxis: {title: 'Y'},
+                        zaxis: {title: 'Z'}
+                    },
+                    plot_bgcolor: 'rgba(15, 23, 42, 0.5)',
+                    paper_bgcolor: 'rgba(30, 41, 59, 0.8)',
+                    font: {color: '#f8fafc'}
+                };
+
+                Plotly.newPlot(chartId, [trace], layout, {responsive: true});
+            }, 100);
+
+            return chartHtml;
+
+        } else if (chart3dEngine === 'matplotlib') {
+            // Usa il backend esistente
+            const response = await fetch(`${API_URL}/api/chart3d`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({type: 'surface'})
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                return `<div style="margin: 1rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);">
+                    <h4 style="margin-bottom: 0.5rem; color: var(--primary);">📊 Superficie 3D (Matplotlib)</h4>
+                    <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                        <strong>Motore:</strong> Matplotlib (Classico, veloce)
+                    </div>
+                    ${render3DChart(data)}
+                </div>`;
+            }
+
+        } else if (chart3dEngine === 'seaborn') {
+            // Seaborn non disponibile, usa matplotlib come fallback
+            showWarning('Seaborn non disponibile, uso Matplotlib');
+            const response = await fetch(`${API_URL}/api/chart3d`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': apiKey
+                },
+                body: JSON.stringify({type: 'surface'})
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                return `<div style="margin: 1rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);">
+                    <h4 style="margin-bottom: 0.5rem; color: var(--primary);">📊 Superficie 3D (Matplotlib)</h4>
+                    <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                        <strong>Motore:</strong> Matplotlib (Classico, veloce - Seaborn non disponibile)
+                    </div>
+                    ${render3DChart(data)}
+                </div>`;
+            }
+        }
+
+    } catch (error) {
+        console.error('Errore generazione superficie 3D:', error);
+        return `<div style="color: var(--danger); padding: 1rem; border: 1px solid var(--danger); border-radius: var(--radius);">
+            ❌ Errore nella generazione della superficie 3D: ${error.message}
+        </div>`;
+    }
+}
+
+async function generateScatter3DChart(text) {
+    try {
+        // Genera dati casuali per scatter 3D
+        const points = 100;
+        const x = [], y = [], z = [];
+
+        for (let i = 0; i < points; i++) {
+            x.push((Math.random() - 0.5) * 10);
+            y.push((Math.random() - 0.5) * 10);
+            z.push((Math.random() - 0.5) * 10);
+        }
+
+        const chartId = 'scatter-chart-' + Math.random().toString(36).substr(2, 9);
+
+        if (chart3dEngine === 'plotly') {
+            const chartHtml = `
+                <div style="margin: 1rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);">
+                    <h4 style="margin-bottom: 0.5rem; color: var(--primary);">🎲 Scatter 3D (Plotly)</h4>
+                    <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                        <strong>Motore:</strong> Plotly (${points} punti)
+                    </div>
+                    <div id="${chartId}" style="width: 100%; height: 400px;"></div>
+                </div>
+            `;
+
+            setTimeout(() => {
+                const trace = {
+                    x: x,
+                    y: y,
+                    z: z,
+                    mode: 'markers',
+                    type: 'scatter3d',
+                    marker: {
+                        size: 6,
+                        color: z,
+                        colorscale: 'Viridis',
+                        showscale: true
+                    }
+                };
+
+                const layout = {
+                    title: `Scatter 3D - ${points} punti`,
+                    scene: {
+                        xaxis: {title: 'X'},
+                        yaxis: {title: 'Y'},
+                        zaxis: {title: 'Z'}
+                    },
+                    plot_bgcolor: 'rgba(15, 23, 42, 0.5)',
+                    paper_bgcolor: 'rgba(30, 41, 59, 0.8)',
+                    font: {color: '#f8fafc'}
+                };
+
+                Plotly.newPlot(chartId, [trace], layout, {responsive: true});
+            }, 100);
+
+            return chartHtml;
+
+        } else if (chart3dEngine === 'matplotlib') {
+            const response = await fetch(`${API_URL}/api/chart3d`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': apiKey
+                },
+                body: JSON.stringify({
+                    type: 'parametric3d',
+                    func_x: func_x,
+                    func_y: func_y,
+                    func_z: func_z,
+                    points: 200
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                return `<div style="margin: 1rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);">
+                    <h4 style="margin-bottom: 0.5rem; color: var(--primary);">📊 Scatter 3D (Matplotlib)</h4>
+                    <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                        <strong>Motore:</strong> Matplotlib (${points} punti)
+                    </div>
+                    ${render3DChart(data)}
+                </div>`;
+            }
+
+        } else if (chart3dEngine === 'seaborn') {
+            // Seaborn non disponibile, usa matplotlib come fallback
+            showWarning('Seaborn non disponibile, uso Matplotlib');
+            const response = await fetch(`${API_URL}/api/chart3d`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': apiKey
+                },
+                body: JSON.stringify({type: 'scatter3d', points: points})
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                return `<div style="margin: 1rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);">
+                    <h4 style="margin-bottom: 0.5rem; color: var(--primary);">📊 Scatter 3D (Matplotlib)</h4>
+                    <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                        <strong>Motore:</strong> Matplotlib (${points} punti - Seaborn non disponibile)
+                    </div>
+                    ${render3DChart(data)}
+                </div>`;
+            }
+        }
+
+    } catch (error) {
+        console.error('Errore generazione scatter 3D:', error);
+        return `<div style="color: var(--danger); padding: 1rem; border: 1px solid var(--danger); border-radius: var(--radius);">
+            ❌ Errore nella generazione dello scatter 3D: ${error.message}
+        </div>`;
+    }
+}
+
+function evaluateMathFunction(funcStr, t) {
+    // Funzione sicura per valutare espressioni matematiche
+    const safeEval = (expr) => {
+        // Sostituisci le funzioni matematiche
+        expr = expr.replace(/sin\(/g, 'Math.sin(');
+        expr = expr.replace(/cos\(/g, 'Math.cos(');
+        expr = expr.replace(/tan\(/g, 'Math.tan(');
+        expr = expr.replace(/sqrt\(/g, 'Math.sqrt(');
+        expr = expr.replace(/exp\(/g, 'Math.exp(');
+        expr = expr.replace(/log\(/g, 'Math.log(');
+        expr = expr.replace(/pi/g, 'Math.PI');
+        expr = expr.replace(/e/g, 'Math.E');
+
+        // Crea una funzione sicura
+        const func = new Function('t', `return ${expr};`);
+        return func(t);
+    };
+
+    return safeEval(funcStr);
+}
+
+async function sendToAIForAnalysis(originalText, chartHtml) {
+    // Mostra indicatore typing
+    showTypingIndicator();
+
+    try {
+        const analysisPrompt = `Ho appena generato un grafico basato sulla tua richiesta: "${originalText}"
+
+Il grafico è stato creato con successo. Ora analizzalo e fornisci:
+1. Una descrizione di cosa rappresenta il grafico
+2. Osservazioni sui dati/pattern visibili
+3. Suggerimenti per miglioramenti o variazioni
+4. Interpretazione del significato dei dati
+
+Rispondi in italiano e sii dettagliato ma conciso.`;
+
+        const response = await fetch(`${API_URL}/api/chat`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                text: analysisPrompt,
+                mode: 'finance', // Usa modalità finance per analisi grafici
+                model: currentModel,
+                prompts: prompts
+            })
+        });
+
+        hideTypingIndicator();
+
+        if (response.ok) {
+            const data = await response.json();
+            addMessage('ai', `🔍 **Analisi del Grafico**\n\n${data.response}`);
+        } else {
+            addMessage('ai', '❌ Errore nell\'analisi del grafico da parte dell\'AI.');
+        }
+
+    } catch (error) {
+        hideTypingIndicator();
+        console.error('Errore analisi AI:', error);
+        addMessage('ai', '❌ Errore nella comunicazione con l\'AI per l\'analisi.');
+    }
+}
+
+// Dati di esempio per grafici finanziari
+const dates = Array.from({length: 24}, (_, i) => {
+    const date = new Date(2023, i, 1);
+    return date.toLocaleDateString('it-IT', {year: 'numeric', month: 'short'});
+});
+
+const entrate = [45000, 48000, 52000, 55000, 58000, 62000, 65000, 68000, 72000, 75000, 78000, 82000,
+                 85000, 88000, 92000, 95000, 98000, 102000, 105000, 108000, 112000, 115000, 118000, 122000];
+
+const uscite = [30000, 32000, 34000, 36000, 38000, 40000, 42000, 44000, 46000, 48000, 50000, 52000,
+                54000, 56000, 58000, 60000, 62000, 64000, 66000, 68000, 70000, 72000, 74000, 76000];
+
+const profitto = entrate.map((e, i) => e - uscite[i]);
+
+// ==================== CARICAMENTO DATI ====================
+function loadDataFromFile() {
+    const fileInput = document.getElementById('dataFile');
+    const file = fileInput.files[0];
+
+    if (!file) {
+        showNotification('Nessun file selezionato', 'warning');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const content = e.target.result;
+            let data;
+
+            if (file.name.endsWith('.csv')) {
+                data = parseCSV(content);
+            } else if (file.name.endsWith('.json')) {
+                data = JSON.parse(content);
+            } else {
+                throw new Error('Formato file non supportato. Usa CSV o JSON.');
+            }
+
+            loadedChartData = data;
+            showNotification(`Dati caricati da ${file.name}!`, 'success');
+        } catch (error) {
+            showNotification(`Errore nel caricamento dei dati: ${error.message}`, 'error');
+            loadedChartData = null;
+        }
+    };
+
+    reader.readAsText(file);
+}
+
+function parseCSV(csvText) {
+    const lines = csvText.trim().split('\n');
+    if (lines.length < 2) {
+        throw new Error('Il file CSV deve avere almeno una riga di intestazioni e una di dati');
+    }
+
+    const headers = lines[0].split(',').map(h => h.trim());
+    const data = [];
+
+    for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',').map(v => v.trim());
+        const row = {};
+        headers.forEach((header, index) => {
+            const value = values[index];
+            // Prova a convertire in numero se possibile
+            const numValue = parseFloat(value);
+            row[header] = isNaN(numValue) ? value : numValue;
+        });
+        data.push(row);
+    }
+
+    return { headers, data };
+}
+
+// ==================== GRAFICI ====================
+
+// 1. GRAFICO A LINEE TEMPORALI
+function showLineChart() {
+    let traces = [];
+    let layout = {};
+
+    if (loadedChartData && loadedChartData.data) {
+        // Usa dati caricati
+        const data = loadedChartData.data;
+        const headers = loadedChartData.headers;
+
+        // Trova colonne numeriche
+        const numericColumns = headers.filter(header => {
+            return data.some(row => typeof row[header] === 'number');
+        });
+
+        if (numericColumns.length < 1) {
+            showNotification('Nessuna colonna numerica trovata nei dati', 'error');
+            return;
+        }
+
+        // Usa la prima colonna come X se è data o stringa, altrimenti usa indici
+        let xData;
+        const firstCol = headers[0];
+        if (data.some(row => isNaN(row[firstCol]))) {
+            xData = data.map(row => row[firstCol]);
+        } else {
+            xData = data.map((_, i) => i + 1);
+        }
+
+        // Crea trace per ogni colonna numerica
+        numericColumns.forEach((col, index) => {
+            const colors = ['#2ecc71', '#e74c3c', '#3498db', '#f39c12', '#9b59b6'];
+            traces.push({
+                x: xData,
+                y: data.map(row => row[col]),
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: col,
+                line: {color: colors[index % colors.length], width: 3},
+                marker: {size: 8}
+            });
+        });
+
+        layout = {
+            title: 'Grafico a Linee - Dati Caricati',
+            xaxis: {title: headers[0]},
+            yaxis: {title: 'Valori'},
+            hovermode: 'x unified',
+            plot_bgcolor: 'rgba(15, 23, 42, 0.5)',
+            paper_bgcolor: 'rgba(30, 41, 59, 0.8)',
+            font: {color: '#f8fafc'}
+        };
+    } else {
+        // Usa dati di esempio
+        const trace1 = {
+            x: dates,
+            y: entrate,
+            type: 'scatter',
+            mode: 'lines+markers',
+            name: 'Entrate',
+            line: {color: '#2ecc71', width: 3},
+            marker: {size: 8}
+        };
+
+        const trace2 = {
+            x: dates,
+            y: uscite,
+            type: 'scatter',
+            mode: 'lines+markers',
+            name: 'Uscite',
+            line: {color: '#e74c3c', width: 3},
+            marker: {size: 8}
+        };
+
+        const trace3 = {
+            x: dates,
+            y: profitto,
+            type: 'scatter',
+            mode: 'lines+markers',
+            name: 'Profitto',
+            line: {color: '#3498db', width: 3},
+            marker: {size: 8}
+        };
+
+        traces = [trace1, trace2, trace3];
+        layout = {
+            title: 'Analisi Finanziaria Mensile',
+            xaxis: {title: 'Periodo'},
+            yaxis: {title: 'Importo (€)'},
+            hovermode: 'x unified',
+            plot_bgcolor: 'rgba(15, 23, 42, 0.5)',
+            paper_bgcolor: 'rgba(30, 41, 59, 0.8)',
+            font: {color: '#f8fafc'}
+        };
+    }
+
+    Plotly.newPlot('chart', traces, layout, {responsive: true});
+
+    document.getElementById('chartTitle').textContent = '📈 Grafico a Linee Temporali';
+    document.getElementById('codeExample').textContent = `const trace = {
+    x: dates,
+    y: values,
+    type: 'scatter',
+    mode: 'lines+markers',
+    name: 'Serie Dati',
+    line: {color: '#2ecc71', width: 3}
+};
+
+Plotly.newPlot('chart', [trace], layout);`;
+}
+
+// 2. GRAFICO A BARRE
+function showBarChart() {
+    const categorie = ['Stipendi', 'Affitti', 'Forniture', 'Marketing', 'Utilities'];
+
+    const trace1 = {
+        x: categorie,
+        y: [45000, 30000, 15000, 20000, 10000],
+        type: 'bar',
+        name: 'Q1 2024',
+        marker: {color: '#667eea'}
+    };
+
+    const trace2 = {
+        x: categorie,
+        y: [48000, 30000, 16000, 22000, 12000],
+        type: 'bar',
+        name: 'Q2 2024',
+        marker: {color: '#764ba2'}
+    };
+
+    const trace3 = {
+        x: categorie,
+        y: [50000, 32000, 17000, 25000, 13000],
+        type: 'bar',
+        name: 'Q3 2024',
+        marker: {color: '#f093fb'}
+    };
+
+    const layout = {
+        title: 'Confronto Spese Trimestrali',
+        xaxis: {title: 'Categoria'},
+        yaxis: {title: 'Spesa (€)'},
+        barmode: 'group',
+        plot_bgcolor: 'rgba(15, 23, 42, 0.5)',
+        paper_bgcolor: 'rgba(30, 41, 59, 0.8)',
+        font: {color: '#f8fafc'}
+    };
+
+    Plotly.newPlot('chart', [trace1, trace2, trace3], layout, {responsive: true});
+
+    document.getElementById('chartTitle').textContent = '📊 Grafico a Barre Comparazione';
+    document.getElementById('codeExample').textContent = `const trace = {
+    x: categories,
+    y: values,
+    type: 'bar',
+    name: 'Periodo',
+    marker: {color: '#667eea'}
+};
+
+const layout = {
+    barmode: 'group' // 'stack' per barre impilate
+};
+
+Plotly.newPlot('chart', [trace], layout);`;
+}
+
+// 3. GRAFICO A TORTA
+function showPieChart() {
+    const trace = {
+        values: [80000, 50000, 40000, 25000, 20000],
+        labels: ['Operativi', 'Marketing', 'Amministrativi', 'R&D', 'Altro'],
+        type: 'pie',
+        marker: {
+            colors: ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#43e97b']
+        },
+        textinfo: 'label+percent',
+        textposition: 'outside',
+        automargin: true
+    };
+
+    const layout = {
+        title: 'Distribuzione Budget Annuale',
+        showlegend: true,
+        plot_bgcolor: 'rgba(15, 23, 42, 0.5)',
+        paper_bgcolor: 'rgba(30, 41, 59, 0.8)',
+        font: {color: '#f8fafc'}
+    };
+
+    Plotly.newPlot('chart', [trace], layout, {responsive: true});
+
+    document.getElementById('chartTitle').textContent = '🥧 Grafico a Torta Distribuzione';
+    document.getElementById('codeExample').textContent = `const trace = {
+    values: [80, 50, 40, 25, 20],
+    labels: ['Cat1', 'Cat2', 'Cat3', 'Cat4', 'Cat5'],
+    type: 'pie',
+    textinfo: 'label+percent'
+};
+
+Plotly.newPlot('chart', [trace], layout);`;
+}
+
+// 4. SCATTER 3D
+function showScatter3D() {
+    const n = 100;
+    const x = Array.from({length: n}, () => Math.random() * 100000);
+    const y = Array.from({length: n}, () => Math.random() * 50000);
+    const z = Array.from({length: n}, () => Math.random() * 50);
+
+    const trace = {
+        x: x,
+        y: y,
+        z: z,
+        mode: 'markers',
+        marker: {
+            size: 8,
+            color: z,
+            colorscale: 'Viridis',
+            showscale: true,
+            colorbar: {title: 'Dipendenti'}
+        },
+        type: 'scatter3d',
+        text: x.map((v, i) => `Fatturato: €${v.toFixed(0)}<br>Costi: €${y[i].toFixed(0)}<br>Dipendenti: ${z[i].toFixed(0)}`),
+        hoverinfo: 'text'
+    };
+
+    const layout = {
+        title: 'Analisi 3D: Fatturato vs Costi vs Dipendenti',
+        scene: {
+            xaxis: {title: 'Fatturato (€)'},
+            yaxis: {title: 'Costi (€)'},
+            zaxis: {title: 'N. Dipendenti'}
+        },
+        plot_bgcolor: 'rgba(15, 23, 42, 0.5)',
+        paper_bgcolor: 'rgba(30, 41, 59, 0.8)',
+        font: {color: '#f8fafc'}
+    };
+
+    Plotly.newPlot('chart', [trace], layout, {responsive: true});
+
+    document.getElementById('chartTitle').textContent = '🎲 Scatter 3D Interattivo';
+    document.getElementById('codeExample').textContent = `const trace = {
+    x: xValues,
+    y: yValues,
+    z: zValues,
+    mode: 'markers',
+    marker: {
+        size: 8,
+        color: zValues,
+        colorscale: 'Viridis'
+    },
+    type: 'scatter3d'
+};
+
+Plotly.newPlot('chart', [trace], layout);`;
+}
+
+// 5. SUPERFICIE 3D
+function showSurface3D() {
+    const size = 30;
+    const x = Array.from({length: size}, (_, i) => i * 10000);
+    const y = Array.from({length: size}, (_, i) => i * 5000);
+
+    const z = [];
+    for (let i = 0; i < size; i++) {
+        const row = [];
+        for (let j = 0; j < size; j++) {
+            row.push(x[j] - y[i] - (x[j] * 0.15));
+        }
+        z.push(row);
+    }
+
+    const trace = {
+        x: x,
+        y: y,
+        z: z,
+        type: 'surface',
+        colorscale: 'Viridis',
+        colorbar: {title: 'Profitto (€)'}
+    };
+
+    const layout = {
+        title: 'Superficie Profitto: Scenari Fatturato-Costi',
+        scene: {
+            xaxis: {title: 'Fatturato (€)'},
+            yaxis: {title: 'Costi (€)'},
+            zaxis: {title: 'Profitto Netto (€)'}
+        },
+        plot_bgcolor: 'rgba(15, 23, 42, 0.5)',
+        paper_bgcolor: 'rgba(30, 41, 59, 0.8)',
+        font: {color: '#f8fafc'}
+    };
+
+    Plotly.newPlot('chart', [trace], layout, {responsive: true});
+
+    document.getElementById('chartTitle').textContent = '🌊 Superficie 3D Analisi Scenari';
+    document.getElementById('codeExample').textContent = `const trace = {
+    x: xArray,
+    y: yArray,
+    z: zMatrix, // Array 2D
+    type: 'surface',
+    colorscale: 'Viridis'
+};
+
+Plotly.newPlot('chart', [trace], layout);`;
+}
+
+// 6. CANDLESTICK (Grafico Finanziario)
+function showCandlestick() {
+    const dates = Array.from({length: 30}, (_, i) => {
+        const date = new Date(2024, 0, i + 1);
+        return date.toISOString().split('T')[0];
+    });
+
+    const open = Array.from({length: 30}, () => 100 + Math.random() * 20);
+    const close = open.map(o => o + (Math.random() - 0.5) * 10);
+    const high = open.map((o, i) => Math.max(o, close[i]) + Math.random() * 5);
+    const low = open.map((o, i) => Math.min(o, close[i]) - Math.random() * 5);
+
+    const trace = {
+        x: dates,
+        close: close,
+        high: high,
+        low: low,
+        open: open,
+        type: 'candlestick',
+        increasing: {line: {color: '#2ecc71'}},
+        decreasing: {line: {color: '#e74c3c'}}
+    };
+
+    const layout = {
+        title: 'Analisi Candlestick - Azioni',
+        xaxis: {
+            title: 'Data',
+            rangeslider: {visible: false}
+        },
+        yaxis: {title: 'Prezzo (€)'},
+        plot_bgcolor: 'rgba(15, 23, 42, 0.5)',
+        paper_bgcolor: 'rgba(30, 41, 59, 0.8)',
+        font: {color: '#f8fafc'}
+    };
+
+    Plotly.newPlot('chart', [trace], layout, {responsive: true});
+
+    document.getElementById('chartTitle').textContent = '💹 Candlestick Finanza';
+    document.getElementById('codeExample').textContent = `const trace = {
+    x: dates,
+    open: openPrices,
+    high: highPrices,
+    low: lowPrices,
+    close: closePrices,
+    type: 'candlestick',
+    increasing: {line: {color: '#2ecc71'}},
+    decreasing: {line: {color: '#e74c3c'}}
+};
+
+Plotly.newPlot('chart', [trace], layout);`;
+}
+
+// 7. HEATMAP
+function showHeatmap() {
+    const mesi = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+    const anni = ['2021', '2022', '2023', '2024'];
+
+    const z = [
+        [45, 48, 52, 55, 58, 62, 65, 68, 72, 75, 78, 82],
+        [48, 52, 56, 60, 64, 68, 72, 76, 80, 84, 88, 92],
+        [52, 56, 61, 66, 71, 76, 81, 86, 91, 96, 101, 106],
+        [56, 61, 67, 73, 79, 85, 91, 97, 103, 109, 115, 122]
+    ];
+
+    const trace = {
+        x: mesi,
+        y: anni,
+        z: z,
+        type: 'heatmap',
+        colorscale: 'YlOrRd',
+        colorbar: {title: 'Vendite (k€)'}
+    };
+
+    const layout = {
+        title: 'Heatmap Vendite Mensili per Anno',
+        xaxis: {title: 'Mese'},
+        yaxis: {title: 'Anno'},
+        plot_bgcolor: 'rgba(15, 23, 42, 0.5)',
+        paper_bgcolor: 'rgba(30, 41, 59, 0.8)',
+        font: {color: '#f8fafc'}
+    };
+
+    Plotly.newPlot('chart', [trace], layout, {responsive: true});
+
+    document.getElementById('chartTitle').textContent = '🔥 Heatmap Correlazioni';
+    document.getElementById('codeExample').textContent = `const trace = {
+    x: xLabels,
+    y: yLabels,
+    z: dataMatrix, // Array 2D
+    type: 'heatmap',
+    colorscale: 'YlOrRd'
+};
+
+Plotly.newPlot('chart', [trace], layout);`;
+}
+
+// 8. GRAFICO MULTI-ASSE
+function showMultiAxis() {
+    const trace1 = {
+        x: dates.slice(0, 12),
+        y: entrate.slice(0, 12),
+        type: 'scatter',
+        name: 'Fatturato',
+        yaxis: 'y',
+        line: {color: '#667eea', width: 3}
+    };
+
+    const trace2 = {
+        x: dates.slice(0, 12),
+        y: Array.from({length: 12}, (_, i) => 50 + i * 2),
+        type: 'scatter',
+        name: 'Dipendenti',
+        yaxis: 'y2',
+        line: {color: '#f093fb', width: 3}
+    };
+
+    const layout = {
+        title: 'Fatturato vs Dipendenti (Multi-Asse)',
+        xaxis: {title: 'Periodo'},
+        yaxis: {
+            title: 'Fatturato (€)',
+            titlefont: {color: '#667eea'},
+            tickfont: {color: '#667eea'}
+        },
+        yaxis2: {
+            title: 'N. Dipendenti',
+            titlefont: {color: '#f093fb'},
+            tickfont: {color: '#f093fb'},
+            overlaying: 'y',
+            side: 'right'
+        },
+        plot_bgcolor: 'rgba(15, 23, 42, 0.5)',
+        paper_bgcolor: 'rgba(30, 41, 59, 0.8)',
+        font: {color: '#f8fafc'}
+    };
+
+    Plotly.newPlot('chart', [trace1, trace2], layout, {responsive: true});
+
+    document.getElementById('chartTitle').textContent = '📉 Grafico Multi-Asse';
+    document.getElementById('codeExample').textContent = `const trace2 = {
+    x: dates,
+    y: values,
+    yaxis: 'y2', // Secondo asse
+    name: 'Serie 2'
+};
+
+const layout = {
+    yaxis2: {
+        overlaying: 'y',
+        side: 'right'
+    }
+};
+
+Plotly.newPlot('chart', [trace1, trace2], layout);`;
 }
 
 function generateChart(type) {

@@ -415,6 +415,25 @@ body {
     transform: translateY(-1px);
 }
 
+.retry-btn {
+    background: var(--secondary);
+    color: white;
+    border: none;
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    transition: all 0.2s ease;
+}
+
+.retry-btn:hover {
+    background: #059669;
+    transform: translateY(-1px);
+}
+
 /* Azioni messaggi */
 .message-actions {
     display: flex;
@@ -528,7 +547,7 @@ code {
 /* Notifications */
 .notification {
     position: fixed;
-    top: 20px;
+    bottom: 120px;
     right: 20px;
     padding: 1rem 1.5rem;
     border-radius: var(--radius);
@@ -540,8 +559,8 @@ code {
 }
 
 @keyframes slideInRight {
-    from { transform: translateX(100%); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
+    from { transform: translateY(100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
 }
 
 /* Speech Button Styles */
@@ -809,18 +828,43 @@ code {
 
 .modal-content {
     background: var(--surface);
-    margin: 10% auto;
+    margin: 5% auto;
     padding: 2rem;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     width: 90%;
     max-width: 600px;
+    max-height: 80vh;
     box-shadow: var(--shadow-lg);
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-content > *:not(.modal-buttons) {
+    flex-shrink: 0;
+}
+
+.modal-content .modal-buttons {
+    flex-shrink: 0;
+    margin-top: auto;
 }
 
 .modal-content h3 {
     margin-bottom: 1.5rem;
     color: var(--primary);
+}
+
+/* Modal button container */
+.modal-buttons {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+    margin-top: auto;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    bottom: 0;
 }
 
 /* Cancel button */
@@ -991,4 +1035,125 @@ code {
     .sidebar-header h3 {
         font-size: 1.1rem;
     }
+}
+
+/* Chart Modal Styles */
+.chart-modal-content {
+    max-width: 1400px;
+    width: 95vw;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.chart-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--border);
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 5px;
+    border-radius: var(--radius-sm);
+    transition: all 0.2s;
+}
+
+.modal-close:hover {
+    background: var(--surface);
+    color: var(--text);
+}
+
+.chart-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.chart-controls {
+    background: var(--surface);
+    padding: 20px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+}
+
+.chart-controls h4 {
+    color: var(--primary);
+    margin-bottom: 15px;
+}
+
+.chart-button-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+}
+
+.chart-btn {
+    padding: 12px 24px;
+    background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    transition: transform 0.2s, box-shadow 0.2s;
+    text-align: center;
+}
+
+.chart-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(79, 70, 229, 0.4);
+}
+
+.chart-btn:active {
+    transform: translateY(0);
+}
+
+.chart-display {
+    background: var(--surface);
+    padding: 20px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+}
+
+.chart-title {
+    color: var(--primary);
+    font-size: 1.5em;
+    margin-bottom: 15px;
+    text-align: center;
+}
+
+#chart {
+    width: 100%;
+    height: 500px;
+}
+
+.chart-info {
+    background: var(--surface);
+    padding: 20px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+}
+
+.chart-info h4 {
+    color: var(--primary);
+    margin-bottom: 10px;
+}
+
+.code-example {
+    background: var(--bg-darker);
+    color: var(--text);
+    padding: 15px;
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+    margin: 10px 0;
+    font-family: 'Courier New', monospace;
+    border: 1px solid var(--border);
 }

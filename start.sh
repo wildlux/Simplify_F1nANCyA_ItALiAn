@@ -28,10 +28,8 @@ echo -e "${NC}"
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$BASE_DIR"
 
-# Imposta branch main
+# Imposta branch main (solo locale, senza push remoto per evitare richieste autenticazione)
 git branch -m master main 2>/dev/null || true
-git push -u origin main 2>/dev/null || true
-gh repo edit --default-branch main 2>/dev/null || true
 
 # Primo avvio - collegamento desktop
 if [ ! -f ".first_run" ]; then

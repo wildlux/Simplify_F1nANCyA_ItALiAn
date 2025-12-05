@@ -10,6 +10,7 @@
      <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
     <link rel="stylesheet" href="style.css">
      <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+     <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.27.0/plotly.min.js"></script>
      <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r161/three.min.js"></script>
      <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
@@ -125,16 +126,24 @@
             <span id="statusText">Connessione...</span>
         </div>
         <div class="status-item">
+            <span>Utente:</span>
+            <span id="userStatus"></span>
+        </div>
+        <div class="status-item">
             <span>Modello:</span>
             <span id="modelStatus" style="color: var(--secondary);">llama3.2:3b</span>
         </div>
         <div class="status-item">
-            <span>Porta:</span>
-            <span>5001</span>
+            <span>Cache:</span>
+            <span id="cacheStatus">0/50</span>
         </div>
         <div class="status-item">
-            <span>Utente:</span>
-            <span id="userStatus">Non connesso</span>
+            <span>Coda:</span>
+            <span id="queueStatus">0</span>
+        </div>
+        <div class="status-item">
+            <span>Perf:</span>
+            <span id="performanceStatus">--ms</span>
         </div>
     </div>
 
@@ -184,9 +193,12 @@
             <button class="quick-btn" onclick="testSpeech()">
                 <i class="fas fa-play-circle"></i> Test Voce
             </button>
-            <button class="quick-btn" onclick="showChartMenu()">
-                <i class="fas fa-chart-bar"></i> Grafici
-            </button>
+              <button class="quick-btn" onclick="showChartMenu()">
+                  <i class="fas fa-chart-bar"></i> Esempi di grafici 2D/3D
+              </button>
+             <button class="quick-btn" onclick="window.open('code-reader.html', '_blank')">
+                 <i class="fas fa-code"></i> Code Reader
+             </button>
             <button class="quick-btn always-visible" onclick="showHelp()">
                 <i class="fas fa-question-circle"></i> Aiuto
             </button>
@@ -305,13 +317,71 @@
                 <textarea id="financePrompt" rows="3" style="width: 100%; padding: 0.5rem; background: var(--bg-dark); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius);"></textarea>
             </div>
 
-            <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: bold;">Motore Grafici 3D:</label>
+                <select id="chart3dEngine" style="width: 100%; padding: 0.5rem; background: var(--bg-dark); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius);">
+                    <option value="plotly">🎯 Plotly (Interattivo, WebGL)</option>
+                    <option value="matplotlib">📊 Matplotlib (Classico, 2D/3D)</option>
+                    <option value="seaborn" disabled style="color: var(--text-secondary);">🎨 Seaborn (Non disponibile - richiede installazione)</option>
+                </select>
+                <small style="color: var(--text-secondary); display: block; margin-top: 0.3rem;">
+                    Plotly: Migliore interattività | Matplotlib: Più veloce | Seaborn: Richiede installazione
+                </small>
+            </div>
+
+            <div class="modal-buttons">
                 <button onclick="savePrompts()" class="btn btn-primary">Salva</button>
                 <button onclick="closeSettings()" class="btn">Chiudi</button>
             </div>
         </div>
     </div>
 
+    <!-- Chart Modal -->
+    <div id="chartModal" class="modal">
+        <div class="modal-content chart-modal-content">
+            <div class="chart-modal-header">
+                <h3><i class="fas fa-chart-bar"></i> Grafici Interattivi Plotly</h3>
+                <button onclick="closeChartModal()" class="modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+             <div class="chart-container">
+                 <div class="chart-controls">
+                     <h4>Scegli il tipo di grafico</h4>
+                     <div class="data-input-section">
+                         <label for="dataFile">Carica file dati (CSV/JSON):</label>
+                         <input type="file" id="dataFile" accept=".csv,.json" onchange="loadDataFromFile()">
+                         <p class="data-info">Formato CSV: colonne separate da virgola, prima riga intestazioni</p>
+                     </div>
+                     <div class="chart-button-group">
+                         <button onclick="showLineChart()" class="chart-btn">📈 Linee Temporali</button>
+                         <button onclick="showBarChart()" class="chart-btn">📊 Barre Comparazione</button>
+                         <button onclick="showPieChart()" class="chart-btn">🥧 Torta Distribuzione</button>
+                         <button onclick="showScatter3D()" class="chart-btn">🎲 Scatter 3D</button>
+                         <button onclick="showSurface3D()" class="chart-btn">🌊 Superficie 3D</button>
+                         <button onclick="showCandlestick()" class="chart-btn">💹 Candlestick Finanza</button>
+                         <button onclick="showHeatmap()" class="chart-btn">🔥 Heatmap</button>
+                         <button onclick="showMultiAxis()" class="chart-btn">📉 Multi-Asse</button>
+                     </div>
+                 </div>
+
+                <div class="chart-display">
+                    <div class="chart-title" id="chartTitle">Seleziona un grafico</div>
+                    <div id="chart"></div>
+                </div>
+
+                <div class="chart-info">
+                    <h4>💻 Codice di Esempio</h4>
+                    <div class="code-example" id="codeExample">
+// Seleziona un grafico per vedere il codice
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/code-reader-api.js"></script>
     <script src="app.js?v=2"></script>
 </body>
 </html>

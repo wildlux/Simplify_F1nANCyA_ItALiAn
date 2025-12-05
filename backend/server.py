@@ -16,16 +16,250 @@ import subprocess
 import matplotlib
 matplotlib.use('Agg')  # Backend per server senza display
 import matplotlib.pyplot as plt
-import seaborn as sns
+import matplotlib.colors as mcolors
+from matplotlib import cm
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL = "llama3.2:3b"
+# Import seaborn in modo sicuro (opzionale)
+try:
+    import seaborn as sns
+    SEABORN_AVAILABLE = True
+    print("✅ Seaborn disponibile per grafici 3D avanzati")
+except ImportError:
+    SEABORN_AVAILABLE = False
+    print("⚠️ Seaborn non disponibile - uso solo matplotlib per grafici 3D")
+import tempfile
+import os
+import sys
+from io import StringIO
+import contextlib
+import ast
+import re
+import time
+
+# 🔐 CARICAMENTO VARIABILI D'AMBIENTE SICURE
+try:
+    from dotenv import load_dotenv
+    # Carica .env dalla directory root del progetto
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env_path = os.path.join(project_root, '.env')
+    load_dotenv(env_path)
+    print("✅ Variabili d'ambiente caricate dal file .env")
+except ImportError:
+    print("⚠️ python-dotenv non installato - uso valori di default")
+except Exception as e:
+    print(f"⚠️ Errore caricamento .env: {e} - uso valori di default")
+
+# 🔐 CARICAMENTO CONFIGURAZIONE DA VARIABILI D'AMBIENTE
+OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://localhost:11434/api/generate')
+MODEL = os.getenv('OLLAMA_MODEL', 'llama3.2:3b')
+
+# API Keys valide caricate dinamicamente
+VALID_API_KEYS = {}
+for key in ['DEMO', 'ADMIN', 'TEST']:
+    api_key = os.getenv(f'API_KEY_{key}')
+    if api_key:
+        if key == 'DEMO':
+            VALID_API_KEYS[api_key] = {
+                "role": "demo",
+                "permissions": ["chat", "charts"],
+                "description": "Utente Demo"
+            }
+        elif key == 'ADMIN':
+            VALID_API_KEYS[api_key] = {
+                "role": "admin",
+                "permissions": ["chat", "charts", "code", "admin"],
+                "description": "Amministratore"
+            }
+        elif key == 'TEST':
+            VALID_API_KEYS[api_key] = {
+                "role": "test",
+                "permissions": ["chat", "charts", "code"],
+                "description": "Testing"
+            }
+
+# Fallback se non ci sono chiavi nel .env
+if not VALID_API_KEYS:
+    print("⚠️ Nessuna API key trovata nel .env - uso valori di default")
+    VALID_API_KEYS = {
+        "demo_key_123": {
+            "role": "demo",
+            "permissions": ["chat", "charts"],
+            "description": "Utente Demo"
+        },
+        "admin_key_456": {
+            "role": "admin",
+            "permissions": ["chat", "charts", "code", "admin"],
+            "description": "Amministratore"
+        },
+        "test_key_789": {
+            "role": "test",
+            "permissions": ["chat", "charts", "code"],
+            "description": "Testing"
+        }
+    }
+
+    # Cache intelligente per risposte frequenti
+response_cache = {}
+CACHE_MAX_SIZE = int(os.getenv('CACHE_MAX_SIZE', '100'))
+CACHE_TTL = int(os.getenv('CACHE_TTL_SECONDS', '3600'))
+
+def get_cache_key(text, mode, model):
+    """Genera chiave cache unica"""
+    import hashlib
+    key_data = f"{text}|{mode}|{model}".encode()
+    return hashlib.md5(key_data).hexdigest()
+
+def get_cached_response(cache_key):
+    """Recupera risposta dalla cache se valida"""
+    if cache_key in response_cache:
+        cached_item = response_cache[cache_key]
+        if time.time() - cached_item['timestamp'] < CACHE_TTL:
+            return cached_item['response']
+        else:
+            # Cache scaduta, rimuovi
+            del response_cache[cache_key]
+    return None
+
+def set_cached_response(cache_key, response):
+    """Salva risposta in cache"""
+    # Gestisci dimensione massima cache
+    if len(response_cache) >= CACHE_MAX_SIZE:
+        # Rimuovi elemento più vecchio
+        oldest_key = min(response_cache.keys(),
+                        key=lambda k: response_cache[k]['timestamp'])
+        del response_cache[oldest_key]
+
+    response_cache[cache_key] = {
+        'response': response,
+        'timestamp': time.time()
+    }
+
+# Configurazione Ollama ottimizzata
+OLLAMA_CONFIG = {
+    "temperature": float(os.getenv('OLLAMA_TEMPERATURE', '0.7')),
+    "top_p": float(os.getenv('OLLAMA_TOP_P', '0.9')),
+    "top_k": int(os.getenv('OLLAMA_TOP_K', '40')),
+    "num_predict": int(os.getenv('OLLAMA_NUM_PREDICT', '512')),
+    "repeat_penalty": float(os.getenv('OLLAMA_REPEAT_PENALTY', '1.1')),
+    "repeat_last_n": 64,
+    "tfs_z": 1.0,
+    "mirostat": 0,
+    "mirostat_tau": 5.0,
+    "mirostat_eta": 0.1,
+    "num_ctx": int(os.getenv('OLLAMA_NUM_CTX', '2048')),
+    "num_thread": int(os.getenv('OLLAMA_NUM_THREAD', '-1')),
+    "num_gpu": int(os.getenv('OLLAMA_NUM_GPU', '-1'))
+}
+
+# API Keys valide
+VALID_API_KEYS = {
+    "demo_key_123": {
+        "role": "demo",
+        "permissions": ["chat", "charts"],
+        "description": "Utente Demo"
+    },
+    "admin_key_456": {
+        "role": "admin",
+        "permissions": ["chat", "charts", "code", "admin"],
+        "description": "Amministratore"
+    },
+    "test_key_789": {
+        "role": "test",
+        "permissions": ["chat", "charts", "code"],
+        "description": "Testing"
+    }
+}
+
+def verify_api_key(api_key):
+    """Verifica se l'API key è valida e restituisce le informazioni"""
+    if not api_key:
+        return None
+
+    return VALID_API_KEYS.get(api_key.strip())
+
+def check_permission(api_key, permission):
+    """Verifica se l'API key ha un determinato permesso"""
+    key_info = verify_api_key(api_key)
+    if not key_info:
+        return False
+
+    return permission in key_info["permissions"]
+
+# API Keys valide
+VALID_API_KEYS = {
+    "demo_key_123": {
+        "role": "demo",
+        "permissions": ["chat", "charts"],
+        "description": "Utente Demo"
+    },
+    "admin_key_456": {
+        "role": "admin",
+        "permissions": ["chat", "charts", "code", "admin"],
+        "description": "Amministratore"
+    },
+    "test_key_789": {
+        "role": "test",
+        "permissions": ["chat", "charts", "code"],
+        "description": "Testing"
+    }
+}
 
 SYSTEM_PROMPTS = {
-    "finance": "Sei un consulente finanziario italiano. Rispondi in italiano.",
-    "math": "Sei un assistente matematico. Mostra i calcoli.",
-    "develop": "Sei un assistente di programmazione esperto. Aiuta con Python, C++, JavaScript, Java e altri linguaggi. Fornisci codice ben commentato e spiegazioni chiare.",
-    "general": "Sei un assistente AI utile. Rispondi in italiano."
+    "finance": """You are an Italian financial consultant. Think and reason in English for accuracy and precision, but always respond to the user in Italian.
+
+Reasoning process (internal, in English):
+- Analyze the financial question carefully
+- Consider Italian financial regulations and tax laws
+- Calculate numbers precisely
+- Structure advice logically
+
+Final response (in Italian):
+- Provide clear, practical financial advice
+- Use simple Italian language
+- Include specific numbers and calculations
+- Give actionable recommendations""",
+
+    "math": """You are a mathematics assistant. Think and reason in English for mathematical precision, but respond to the user in Italian.
+
+Reasoning process (internal, in English):
+- Break down the mathematical problem step by step
+- Use precise mathematical terminology
+- Verify calculations carefully
+- Consider multiple solution approaches
+
+Final response (in Italian):
+- Explain the solution clearly in Italian
+- Show all calculation steps
+- Use Italian mathematical terminology
+- Provide the final answer prominently""",
+
+    "develop": """You are an expert programming assistant. Think and reason in English for technical accuracy, but respond to the user in Italian.
+
+Reasoning process (internal, in English):
+- Analyze the programming problem thoroughly
+- Consider best practices and design patterns
+- Plan the solution architecture
+- Identify potential issues and edge cases
+
+Final response (in Italian):
+- Provide well-commented code
+- Explain the solution in clear Italian
+- Include usage examples
+- Mention important considerations""",
+
+    "general": """You are a helpful AI assistant. Think and reason in English for clarity and accuracy, but always respond to the user in Italian.
+
+Reasoning process (internal, in English):
+- Understand the user's question completely
+- Structure the response logically
+- Consider the most helpful approach
+- Ensure accuracy of information
+
+Final response (in Italian):
+- Be friendly and helpful
+- Use clear, natural Italian
+- Provide comprehensive but concise answers
+- Ask clarifying questions if needed"""
 }
 
 def get_available_models():
@@ -188,9 +422,9 @@ def create_3d_chart_response(chart_type, params=None):
 
     if chart_type == "surface":
         data = generate_3d_surface_data(**params)
-    elif chart_type == "scatter":
+    elif chart_type in ["scatter", "scatter3d"]:
         data = generate_3d_scatter_data(**params)
-    elif chart_type == "parametric":
+    elif chart_type in ["parametric", "parametric3d"]:
         data = generate_3d_parametric_data(**params)
     else:
         return {"error": f"Tipo di grafico 3D non supportato: {chart_type}"}
@@ -199,20 +433,113 @@ def create_3d_chart_response(chart_type, params=None):
 
 
 
-def call_ollama(prompt: str, model: str = MODEL):
-    payload = {"model": model, "prompt": prompt, "stream": False}
+def call_ollama(prompt: str, model: str = MODEL, mode: str = "general"):
+    """Chiama Ollama con ottimizzazioni per velocità"""
+
+    # 🚀 OTTIMIZZAZIONE 1: CACHE INTELLIGENTE
+    cache_key = get_cache_key(prompt, mode, model)
+    cached_response = get_cached_response(cache_key)
+    if cached_response:
+        print(f"⚡ CACHE HIT - Risposta servita dalla cache")
+        return cached_response
+
+    # 🚀 OTTIMIZZAZIONE 2: CONFIGURAZIONE OTTIMIZZATA
+    config = OLLAMA_CONFIG.copy()
+
+    # Adatta configurazione al tipo di richiesta
+    if mode == "math":
+        # Matematica: precisione massima, velocità ridotta
+        config.update({
+            "temperature": 0.1,  # Più deterministico
+            "num_predict": 1024,  # Risposte più lunghe per calcoli
+            "top_p": 0.95
+        })
+    elif mode == "develop":
+        # Sviluppo: creativo ma preciso
+        config.update({
+            "temperature": 0.3,
+            "num_predict": 2048,  # Codice può essere lungo
+            "top_p": 0.9
+        })
+    elif mode == "finance":
+        # Finanza: preciso e professionale
+        config.update({
+            "temperature": 0.2,
+            "num_predict": 1024,
+            "top_p": 0.85
+        })
+
+    # 🚀 OTTIMIZZAZIONE 3: PROMPT OTTIMIZZATO
+    # Rimuovi spazi extra e normalizza
+    prompt = prompt.strip()
+    if len(prompt) > 1000:
+        # Per prompt molto lunghi, usa riassunto intelligente
+        prompt = prompt[:800] + "... [testo troncato per velocità]"
+
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        **config  # Applica configurazione ottimizzata
+    }
+
     try:
-        response = requests.post(OLLAMA_URL, json=payload, timeout=60)
+        start_time = time.time()
+        timeout = 30 if len(prompt) < 500 else 60
+
+        response = requests.post(OLLAMA_URL, json=payload, timeout=timeout)
         response.raise_for_status()
-        return response.json().get("response", "Nessuna risposta")
+
+        result = response.json().get("response", "Nessuna risposta")
+
+        # Post-processing risposta
+        if len(result.strip()) < 10:
+            result = "Risposta troppo breve. Riprova con una domanda più dettagliata."
+        elif len(result) > 4000:
+            result = result[:4000] + "\n\n[risposta troncata per brevità]"
+
+        print(f"⚡ Risposta generata in {time.time() - start_time:.2f}s")
+        set_cached_response(cache_key, result)
+        return result
+
+    except requests.exceptions.Timeout:
+        return "⏱️ Timeout: La risposta sta richiedendo troppo tempo. Prova a semplificare la domanda."
+    except requests.exceptions.ConnectionError:
+        return "🔌 Errore di connessione: Ollama non è raggiungibile. Verifica che sia in esecuzione."
     except Exception as e:
-        return f"Errore: {str(e)}"
+        error_msg = f"❌ Errore LLM: {str(e)}"
+        print(f"Errore Ollama: {e}")
+        return error_msg
 
 class AIHandler(http.server.BaseHTTPRequestHandler):
     def send_cors_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-API-Key, Authorization')
+
+    def _extract_api_key(self):
+        """Estrae API key dagli header (Best Practice: Sicurezza)"""
+        # Priorità: X-API-Key > Authorization Bearer
+        if 'X-API-Key' in self.headers:
+            return self.headers['X-API-Key'].strip()
+        elif 'Authorization' in self.headers:
+            auth_header = self.headers['Authorization']
+            if auth_header.startswith('Bearer '):
+                return auth_header[7:].strip()
+        return None
+
+    def _send_auth_error(self, message):
+        """Invia errore di autenticazione (Best Practice: UX)"""
+        self.send_response(401)
+        self.send_header('Content-Type', 'application/json')
+        self.send_cors_headers()
+        self.end_headers()
+        response = {
+            "error": "Autenticazione fallita",
+            "message": message,
+            "valid_keys": list(VALID_API_KEYS.keys())
+        }
+        self.wfile.write(json.dumps(response).encode())
 
     def do_GET(self):
         print(f"GET request: {self.path}")
@@ -248,6 +575,40 @@ class AIHandler(http.server.BaseHTTPRequestHandler):
             self.send_cors_headers()
             self.end_headers()
             response = {"models": models, "recommended": "llama3.2:3b"}
+            self.wfile.write(json.dumps(response).encode())
+        elif self.path == "/api/code/languages":
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_cors_headers()
+            self.end_headers()
+            response = {
+                'languages': [
+                    {
+                        'name': 'Python',
+                        'value': 'python',
+                        'execution': True,
+                        'analysis': True
+                    },
+                    {
+                        'name': 'JavaScript',
+                        'value': 'javascript',
+                        'execution': True,
+                        'analysis': True
+                    },
+                    {
+                        'name': 'C++',
+                        'value': 'cpp',
+                        'execution': True,
+                        'analysis': False
+                    },
+                    {
+                        'name': 'TypeScript',
+                        'value': 'typescript',
+                        'execution': False,
+                        'analysis': True
+                    }
+                ]
+            }
             self.wfile.write(json.dumps(response).encode())
         elif self.path == "/docs":
             self.send_response(200)
@@ -309,6 +670,20 @@ class AIHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         try:
+            # Verifica API Key per tutti gli endpoint (Best Practice: Sicurezza)
+            api_key = self._extract_api_key()
+            if not api_key:
+                self._send_auth_error("API Key richiesta")
+                return
+
+            key_info = verify_api_key(api_key)
+            if not key_info:
+                self._send_auth_error("API Key non valida")
+                return
+
+            # Log dell'accesso per audit (Best Practice: Logging)
+            print(f"[AUTH] Accesso consentito per key: {key_info['role']} - IP: {self.client_address[0]}")
+
             if self.path == "/api/chat":
                 content_length = int(self.headers['Content-Length'])
                 post_data = self.rfile.read(content_length)
@@ -341,9 +716,31 @@ class AIHandler(http.server.BaseHTTPRequestHandler):
                 data = json.loads(post_data.decode())
 
                 chart_type = data.get("type", "line")
-                chart_data = data.get("data", {})
 
-                image_url = generate_matplotlib_plot(chart_data, chart_type)
+                if chart_type == "parametric3d_seaborn":
+                    # Gestisci grafico parametrico 3D con Seaborn
+                    func_x = data.get("func_x", "cos(t)")
+                    func_y = data.get("func_y", "sin(t)")
+                    func_z = data.get("func_z", "t")
+                    points = data.get("points", 200)
+
+                    image_url = generate_seaborn_parametric_3d(func_x, func_y, func_z, points)
+                elif chart_type == "scatter3d_seaborn":
+                    # Gestisci scatter 3D con Seaborn (se disponibile)
+                    points = data.get("points", 100)
+                    if SEABORN_AVAILABLE:
+                        image_url = generate_seaborn_scatter_3d(points)
+                    else:
+                        image_url = generate_matplotlib_plot({"error": "Seaborn non disponibile"}, "line")
+                elif chart_type == "surface3d_seaborn":
+                    # Gestisci superficie 3D con Seaborn (se disponibile)
+                    if SEABORN_AVAILABLE:
+                        image_url = generate_seaborn_surface_3d()
+                    else:
+                        image_url = generate_matplotlib_plot({"error": "Seaborn non disponibile"}, "line")
+                else:
+                    chart_data = data.get("data", {})
+                    image_url = generate_matplotlib_plot(chart_data, chart_type)
 
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
@@ -370,6 +767,84 @@ class AIHandler(http.server.BaseHTTPRequestHandler):
 
                 self.wfile.write(json.dumps(chart_data).encode())
 
+            elif self.path == "/api/code/analyze":
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                data = json.loads(post_data.decode())
+
+                code = data.get("code", "")
+                language = data.get("language", "python")
+
+                try:
+                    if language == 'python':
+                        analysis = analyze_python_code(code)
+                    elif language in ['javascript', 'typescript']:
+                        analysis = analyze_javascript_code(code)
+                    else:
+                        analysis = {'error': f'Analisi {language} non supportata'}
+
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.send_cors_headers()
+                    self.end_headers()
+
+                    response = {
+                        'success': True,
+                        'language': language,
+                        'analysis': analysis
+                    }
+                    self.wfile.write(json.dumps(response).encode())
+
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_cors_headers()
+                    self.end_headers()
+                    response = {'success': False, 'error': str(e)}
+                    self.wfile.write(json.dumps(response).encode())
+
+            elif self.path == "/api/code/execute":
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                data = json.loads(post_data.decode())
+
+                code = data.get("code", "")
+                language = data.get("language", "python")
+                timeout = min(data.get("timeout", 5), 10)  # Max 10 secondi
+
+                try:
+                    if language == 'python':
+                        success, output, errors, exec_time = execute_python_safe(code, timeout)
+                        analysis = analyze_python_code(code) if success else None
+                    elif language == 'javascript':
+                        success, output, errors, exec_time = execute_javascript_node(code, timeout)
+                        analysis = analyze_javascript_code(code) if success else None
+                    elif language == 'cpp':
+                        success, output, errors, exec_time = execute_cpp_code(code, timeout)
+                        analysis = None
+                    else:
+                        raise Exception(f"Linguaggio {language} non supportato")
+
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.send_cors_headers()
+                    self.end_headers()
+
+                    response = {
+                        'success': success,
+                        'output': output,
+                        'errors': errors,
+                        'execution_time': exec_time,
+                        'analysis': analysis
+                    }
+                    self.wfile.write(json.dumps(response).encode())
+
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_cors_headers()
+                    self.end_headers()
+                    response = {'success': False, 'error': str(e)}
+                    self.wfile.write(json.dumps(response).encode())
+
             else:
                 self.send_response(404)
                 self.send_cors_headers()
@@ -387,12 +862,385 @@ class AIHandler(http.server.BaseHTTPRequestHandler):
         self.send_cors_headers()
         self.end_headers()
 
+# ============================================
+# CODE ANALYSIS FUNCTIONS
+# ============================================
+
+def analyze_python_code(code: str) -> dict:
+    """Analizza codice Python e restituisce metriche"""
+    try:
+        tree = ast.parse(code)
+
+        functions = []
+        classes = []
+        imports = []
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                functions.append({
+                    'name': node.name,
+                    'line': node.lineno,
+                    'args': [arg.arg for arg in node.args.args]
+                })
+            elif isinstance(node, ast.ClassDef):
+                classes.append({
+                    'name': node.name,
+                    'line': node.lineno,
+                    'methods': [m.name for m in node.body if isinstance(m, ast.FunctionDef)]
+                })
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                if isinstance(node, ast.Import):
+                    imports.extend([alias.name for alias in node.names])
+                else:
+                    imports.append(node.module if node.module else "relative")
+
+        lines = code.split('\n')
+        comments = len([l for l in lines if l.strip().startswith('#')])
+
+        return {
+            'functions': functions,
+            'classes': classes,
+            'imports': list(set(imports)),
+            'lines': len(lines),
+            'comments': comments,
+            'complexity': calculate_complexity(tree)
+        }
+    except Exception as e:
+        return {'error': str(e)}
+
+def calculate_complexity(tree) -> int:
+    """Calcola complessità ciclomatica"""
+    complexity = 1
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.If, ast.For, ast.While, ast.ExceptHandler)):
+            complexity += 1
+        elif isinstance(node, ast.BoolOp):
+            complexity += len(node.values) - 1
+    return complexity
+
+def analyze_javascript_code(code: str) -> dict:
+    """Analizza codice JavaScript (parsing semplice)"""
+    functions = re.findall(r'function\s+(\w+)\s*\(|const\s+(\w+)\s*=\s*\(.*?\)\s*=>', code)
+    classes = re.findall(r'class\s+(\w+)', code)
+    imports = re.findall(r'^import\s+.+$', code, re.MULTILINE)
+
+    lines = code.split('\n')
+    comments = len([l for l in lines if l.strip().startswith('//')])
+
+    return {
+        'functions': [f[0] or f[1] for f in functions],
+        'classes': classes,
+        'imports': imports,
+        'lines': len(lines),
+        'comments': comments
+    }
+
+# ============================================
+# CODE EXECUTION FUNCTIONS
+# ============================================
+
+def execute_python_safe(code: str, timeout: int = 5) -> tuple:
+    """Esegue Python in modo sicuro con timeout"""
+    start_time = time.time()
+
+    # Cattura output
+    output_buffer = StringIO()
+    error_buffer = StringIO()
+
+    try:
+        # Ambiente limitato
+        safe_globals = {
+            '__builtins__': {
+                'print': print,
+                'range': range,
+                'len': len,
+                'str': str,
+                'int': int,
+                'float': float,
+                'list': list,
+                'dict': dict,
+                'sum': sum,
+                'max': max,
+                'min': min,
+                'abs': abs,
+                'round': round,
+                'sorted': sorted,
+                'enumerate': enumerate,
+                'zip': zip,
+                'map': map,
+                'filter': filter,
+            }
+        }
+
+        # Esegui con cattura output
+        with contextlib.redirect_stdout(output_buffer), contextlib.redirect_stderr(error_buffer):
+            exec(code, safe_globals)
+
+        execution_time = time.time() - start_time
+        return True, output_buffer.getvalue(), error_buffer.getvalue(), execution_time
+
+    except Exception as e:
+        execution_time = time.time() - start_time
+        return False, output_buffer.getvalue(), str(e), execution_time
+
+def execute_javascript_node(code: str, timeout: int = 5) -> tuple:
+    """Esegue JavaScript con Node.js"""
+    start_time = time.time()
+    temp_file = None
+
+    try:
+        # Crea file temporaneo
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False) as f:
+            f.write(code)
+            temp_file = f.name
+
+        # Esegui con Node.js
+        result = subprocess.run(
+            ['node', temp_file],
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+
+        execution_time = time.time() - start_time
+
+        # Pulisci
+        os.unlink(temp_file)
+
+        return result.returncode == 0, result.stdout, result.stderr, execution_time
+
+    except subprocess.TimeoutExpired:
+        if temp_file and os.path.exists(temp_file):
+            os.unlink(temp_file)
+        return False, "", "Timeout: esecuzione troppo lunga", timeout
+    except FileNotFoundError:
+        return False, "", "Node.js non installato", 0
+    except Exception as e:
+        if temp_file and os.path.exists(temp_file):
+            os.unlink(temp_file)
+        return False, "", str(e), 0
+
+def execute_cpp_code(code: str, timeout: int = 10) -> tuple:
+    """Compila ed esegue C++"""
+    start_time = time.time()
+
+    try:
+        # Crea file sorgente
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.cpp', delete=False) as f:
+            f.write(code)
+            source_file = f.name
+
+        # Nome eseguibile
+        exe_file = source_file.replace('.cpp', '')
+
+        # Compila
+        compile_result = subprocess.run(
+            ['g++', source_file, '-o', exe_file, '-std=c++17'],
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+
+        if compile_result.returncode != 0:
+            os.unlink(source_file)
+            return False, "", f"Errore compilazione:\n{compile_result.stderr}", time.time() - start_time
+
+        # Esegui
+        run_result = subprocess.run(
+            [exe_file],
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+
+        execution_time = time.time() - start_time
+
+        # Pulisci
+        os.unlink(source_file)
+        if os.path.exists(exe_file):
+            os.unlink(exe_file)
+
+        return run_result.returncode == 0, run_result.stdout, run_result.stderr, execution_time
+
+    except subprocess.TimeoutExpired:
+        return False, "", "Timeout: esecuzione troppo lunga", timeout
+    except FileNotFoundError:
+        return False, "", "g++ non installato", 0
+    except Exception as e:
+        return False, "", str(e), 0
+
+def generate_seaborn_parametric_3d(func_x, func_y, func_z, points=200):
+    """Genera grafico parametrico 3D con Seaborn styling"""
+    try:
+        import seaborn as sns
+        sns.set_style("darkgrid")
+        sns.set_palette("husl")
+
+        # Genera dati parametrici
+        t = np.linspace(0, 4*np.pi, points)
+
+        # Valuta funzioni in modo sicuro
+        safe_dict = {"t": t, "np": np, "sin": np.sin, "cos": np.cos, "tan": np.tan,
+                    "exp": np.exp, "log": np.log, "sqrt": np.sqrt, "pi": np.pi, "e": np.e}
+
+        try:
+            x = eval(func_x, {"__builtins__": {}}, safe_dict)
+            y = eval(func_y, {"__builtins__": {}}, safe_dict)
+            z = eval(func_z, {"__builtins__": {}}, safe_dict)
+        except Exception as e:
+            # Fallback a spirale
+            x = np.cos(t)
+            y = np.sin(t)
+            z = t
+
+        # Crea figura 3D con Seaborn-like styling
+        fig = plt.figure(figsize=(12, 8))
+        ax = fig.add_subplot(111, projection='3d')
+
+        # Colori basati su Z con Seaborn palette
+        norm = mcolors.Normalize(vmin=z.min(), vmax=z.max())
+        cmap = cm.get_cmap('viridis')
+
+        # Plot della curva
+        scatter = ax.scatter(x, y, z, c=z, cmap=cmap, s=20, alpha=0.8)
+        ax.plot(x, y, z, color='navy', alpha=0.6, linewidth=2)
+
+        # Migliora l'aspetto
+        ax.set_xlabel('X', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Y', fontsize=12, fontweight='bold')
+        ax.set_zlabel('Z', fontsize=12, fontweight='bold')
+        ax.set_title(f'Curva Parametrica 3D\nx={func_x}, y={func_y}, z={func_z}',
+                    fontsize=14, fontweight='bold', pad=20)
+
+        # Colorbar
+        cbar = plt.colorbar(scatter, ax=ax, shrink=0.8, aspect=20)
+        cbar.set_label('Valore Z', fontsize=10, fontweight='bold')
+
+        # Migliora la vista
+        ax.view_init(elev=20, azim=45)
+
+        # Salva come base64
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight',
+                   facecolor='#f8f9fa', edgecolor='none')
+        buffer.seek(0)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode()
+        plt.close(fig)
+
+        return f"data:image/png;base64,{image_base64}"
+
+    except Exception as e:
+        print(f"Errore generazione Seaborn 3D: {e}")
+        return generate_matplotlib_plot({"error": str(e)}, "line")
+
+def generate_seaborn_scatter_3d(points=100):
+    """Genera scatter 3D con Seaborn styling"""
+    try:
+        import seaborn as sns
+        from matplotlib import cm
+        sns.set_style("darkgrid")
+        sns.set_palette("husl")
+
+        # Genera dati casuali
+        x = np.random.normal(0, 2, points)
+        y = np.random.normal(0, 2, points)
+        z = np.random.normal(0, 2, points)
+
+        # Crea figura 3D
+        fig = plt.figure(figsize=(12, 8))
+        ax = fig.add_subplot(111, projection='3d')
+
+        # Scatter plot con colori basati su Z
+        scatter = ax.scatter(x, y, z, c=z, cmap='viridis', s=50, alpha=0.8, edgecolors='black', linewidth=0.5)
+
+        # Migliora l'aspetto
+        ax.set_xlabel('X', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Y', fontsize=12, fontweight='bold')
+        ax.set_zlabel('Z', fontsize=12, fontweight='bold')
+        ax.set_title(f'Scatter 3D - {points} punti\n(Styling Seaborn)', fontsize=14, fontweight='bold', pad=20)
+
+        # Colorbar
+        cbar = plt.colorbar(scatter, ax=ax, shrink=0.8, aspect=20)
+        cbar.set_label('Valore Z', fontsize=10, fontweight='bold')
+
+        # Migliora la vista
+        ax.view_init(elev=20, azim=45)
+
+        # Salva come base64
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight',
+                   facecolor='#f8f9fa', edgecolor='none')
+        buffer.seek(0)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode()
+        plt.close(fig)
+
+        return f"data:image/png;base64,{image_base64}"
+
+    except Exception as e:
+        print(f"Errore generazione Seaborn scatter 3D: {e}")
+        return generate_matplotlib_plot({"error": str(e)}, "line")
+
+def generate_seaborn_surface_3d():
+    """Genera superficie 3D con Seaborn styling"""
+    try:
+        import seaborn as sns
+        sns.set_style("darkgrid")
+
+        # Crea dati per superficie
+        x = np.linspace(-5, 5, 30)
+        y = np.linspace(-5, 5, 30)
+        X, Y = np.meshgrid(x, y)
+        Z = np.sin(np.sqrt(X**2 + Y**2)) * np.exp(-0.1 * (X**2 + Y**2))
+
+        # Crea figura 3D
+        fig = plt.figure(figsize=(12, 8))
+        ax = fig.add_subplot(111, projection='3d')
+
+        # Surface plot
+        surf = ax.plot_surface(X, Y, Z, cmap='viridis', alpha=0.8, linewidth=0, antialiased=True)
+
+        # Migliora l'aspetto
+        ax.set_xlabel('X', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Y', fontsize=12, fontweight='bold')
+        ax.set_zlabel('Z', fontsize=12, fontweight='bold')
+        ax.set_title('Superficie 3D\nf(x,y) = sin(√(x²+y²)) × e^(-0.1×(x²+y²))', fontsize=14, fontweight='bold', pad=20)
+
+        # Colorbar
+        cbar = plt.colorbar(surf, ax=ax, shrink=0.8, aspect=20)
+        cbar.set_label('Valore Z', fontsize=10, fontweight='bold')
+
+        # Migliora la vista
+        ax.view_init(elev=30, azim=45)
+
+        # Salva come base64
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight',
+                   facecolor='#f8f9fa', edgecolor='none')
+        buffer.seek(0)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode()
+        plt.close(fig)
+
+        return f"data:image/png;base64,{image_base64}"
+
+    except Exception as e:
+        print(f"Errore generazione Seaborn surface 3D: {e}")
+        return generate_matplotlib_plot({"error": str(e)}, "line")
+
 def run_server():
     try:
-        with socketserver.ThreadingTCPServer(("0.0.0.0", 5005), AIHandler) as httpd:
-            print("🚀 Assistente AI Backend avviato su porta 5005")
-            print("🌐 Frontend: http://localhost:8080")
-            httpd.serve_forever()
+        host = os.getenv('SERVER_HOST', '0.0.0.0')
+        port = int(os.getenv('SERVER_PORT', '5005'))
+
+        print(f"Starting server on {host}:{port}")
+        print("Creating TCPServer...")
+        httpd = socketserver.ThreadingTCPServer((host, port), AIHandler)
+        print("TCPServer created")
+        print(f"🚀 Assistente AI Backend avviato su {host}:{port}")
+        print("🌐 Frontend: http://localhost:8080")
+        print(f"🔐 API Keys caricate: {len(VALID_API_KEYS)}")
+        print(f"⚡ Cache abilitata: {os.getenv('ENABLE_CACHE', 'true')}")
+        print("Calling serve_forever...")
+        httpd.serve_forever()
     except Exception as e:
         print(f"Errore avvio server: {e}")
         import traceback
