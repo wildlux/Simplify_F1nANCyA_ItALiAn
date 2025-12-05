@@ -2,7 +2,7 @@
 // Versione: 4.0
 
 // ==================== CONFIGURAZIONE ====================
-const API_URL = 'http://localhost:5003';
+const API_URL = 'http://localhost:5005';
 let apiKey = null;
 let currentMode = 'auto';
 let currentTheme = 'dark';
@@ -60,16 +60,11 @@ window.onload = function() {
         connectToBackend();
     }
 
-    // Click outside modal or menu to close
+    // Click outside modal to close
     window.onclick = function(event) {
         const modal = document.getElementById('settingsModal');
         if (event.target == modal) {
             modal.style.display = 'none';
-        }
-        const menuBtn = document.getElementById('menuBtn');
-        const dropdown = document.getElementById('menuDropdown');
-        if (!menuBtn.contains(event.target) && !dropdown.contains(event.target)) {
-            dropdown.style.display = 'none';
         }
     };
 
@@ -158,6 +153,7 @@ async function connectToBackend() {
 
             isConnected = true;
             updateConnectionStatus('online', 'Connesso');
+            modelStatus.textContent = data.system?.model || 'llama3.2:3b';
 
             // Carica modelli
             await loadModels();
@@ -255,12 +251,14 @@ function addMessage(sender, content, showTime = true) {
 
     const timeStr = showTime ? new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '';
 
-    // Format content for AI messages
-    if (sender === 'ai') {
+    // Charts are generated in AI responses only
+
+    // Format content for AI messages (skip if already HTML)
+    if (sender === 'ai' && !content.trim().startsWith('<')) {
         content = formatResponse(content);
     }
 
-    // Aggiungi pulsanti solo per messaggi AI
+    // Aggiungi pulsanti per messaggi AI e User
     const actionButtons = sender === 'ai' ? `
         <div class="message-actions">
             <button class="action-btn speak-btn" onclick="speakText(this)" title="Leggi ad alta voce">
@@ -270,7 +268,13 @@ function addMessage(sender, content, showTime = true) {
                 <i class="fas fa-copy"></i>
             </button>
         </div>
-    ` : '';
+    ` : `
+        <div class="message-actions">
+            <button class="action-btn edit-btn" onclick="editMessage(this)" title="Modifica messaggio">
+                <i class="fas fa-edit"></i>
+            </button>
+        </div>
+    `;
 
     messageDiv.innerHTML = `
         <div class="bubble">
@@ -384,8 +388,181 @@ async function sendMessage() {
     }
 }
 
+// ==================== RILEVAMENTO CODICE ====================
+function detectCodeBlocks(text) {
+    const lines = text.split('\n');
+    const blocks = [];
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        let language = null;
+        let confidence = 0;
+
+        // Python
+        if (line.match(/^(import|from|def|class|if|for|while|try|with)\s/) ||
+            line.match(/^\s*(def|class|if|for|while|try|with)/)) {
+            language = 'python';
+            confidence = 0.9;
+        }
+        // Bash
+        else if (line.match(/^#!/) || line.match(/^(sudo|apt|yum|cd|ls|grep|awk|sed|curl|wget)/) ||
+                 line.includes('bash') || line.includes('sh')) {
+            language = 'bash';
+            confidence = 0.8;
+        }
+        // HTML
+        else if (line.match(/<\/?[a-zA-Z][^>]*>/) || line.includes('<html') || line.includes('<div')) {
+            language = 'html';
+            confidence = 0.8;
+        }
+        // CSS
+        else if (line.match(/[a-zA-Z-]+\s*\{[^}]*\}/) || line.match(/\.[a-zA-Z-]+\s*\{/) ||
+                 line.includes('color:') || line.includes('font-')) {
+            language = 'css';
+            confidence = 0.8;
+        }
+        // JavaScript
+        else if (line.match(/(function|const|let|var|console\.|document\.)/) ||
+                 line.includes('addEventListener') || line.includes('querySelector')) {
+            language = 'javascript';
+            confidence = 0.8;
+        }
+        // SQL
+        else if (line.match(/\b(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|FROM|WHERE|JOIN)\b/i)) {
+            language = 'sql';
+            confidence = 0.8;
+        }
+        // JSON
+        else if (line.match(/"[^"]*"\s*:/) || line.match(/^\s*[\{\[]/)) {
+            language = 'json';
+            confidence = 0.7;
+        }
+
+        if (language && confidence > 0.6) {
+            // Trova fine blocco
+            let endLine = i;
+            for (let j = i + 1; j < lines.length; j++) {
+                const nextLine = lines[j].trim();
+                if (nextLine === '') {
+                    endLine = j;
+                    break;
+                }
+                // Se riga successiva non sembra codice, ferma
+                if (!nextLine.match(/^\s*#/) &&
+                    !nextLine.match(/[a-zA-Z_][a-zA-Z0-9_]*\s*[\(\{=]/) &&
+                    !nextLine.match(/<\/?[a-zA-Z]/) &&
+                    !nextLine.match(/[a-zA-Z-]+\s*:/) &&
+                    !nextLine.match(/^\s*(def|class|if|for|while|try|with|import|from)/)) {
+                    break;
+                }
+                endLine = j;
+            }
+
+            blocks.push({
+                start: i,
+                end: endLine + 1,
+                language: language,
+                code: lines.slice(i, endLine + 1).join('\n')
+            });
+
+            i = endLine; // Salta le righe processate
+        }
+    }
+
+    return blocks;
+}
+
 // ==================== FORMATTAZIONE RISPOSTE ====================
 function formatResponse(text) {
+    // Converti `python ... in ```python\n...\n```
+    text = text.replace(/`python (.*)/g, '```python\n$1\n```');
+
+    // Detect and wrap code blocks automatically
+    const lines = text.split('\n');
+    let inCodeBlock = false;
+    let codeBlock = [];
+    let language = 'plaintext';
+    let formattedText = '';
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (!inCodeBlock) {
+            if (line.match(/^(def|class|import|from|if|elif|else|for|while|try|except|finally|with|return|print|pass|break|continue)/) ||
+                line.match(/^\s*(def|class|import|from|if|elif|else|for|while|try|except|finally|with|return|print|pass|break|continue)/) ||
+                line.match(/^[a-zA-Z_][a-zA-Z0-9_]*\s*\([^)]*\)\s*:/) || // function definitions
+                line.match(/^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*=\s/) || // assignments
+                line.match(/^\s*#.*$/) // comments
+                ) {
+                inCodeBlock = true;
+                language = 'python';
+                codeBlock = [line];
+            } else if (line.match(/^#!/) || line.match(/^(sudo|apt|yum|cd|ls|grep|awk|sed|curl|wget)/) ||
+                      line.includes('bash') || line.includes('sh')) {
+                inCodeBlock = true;
+                language = 'bash';
+                codeBlock = [line];
+            } else if (line.match(/<\/?[a-zA-Z][^>]*>/) || line.includes('<html') || line.includes('<div')) {
+                inCodeBlock = true;
+                language = 'html';
+                codeBlock = [line];
+            } else if (line.match(/[a-zA-Z-]+\s*\{[^}]*\}/) || line.match(/\.[a-zA-Z-]+\s*\{/) ||
+                      line.includes('color:') || line.includes('font-') || line.includes('background:')) {
+                inCodeBlock = true;
+                language = 'css';
+                codeBlock = [line];
+            } else if (line.match(/(function|const|let|var|console\.|document\.)/) ||
+                      line.includes('addEventListener') || line.includes('querySelector')) {
+                inCodeBlock = true;
+                language = 'javascript';
+                codeBlock = [line];
+            } else if (line.match(/\b(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|FROM|WHERE|JOIN)\b/i)) {
+                inCodeBlock = true;
+                language = 'sql';
+                codeBlock = [line];
+            } else if (line.match(/"[^"]*"\s*:/) || line.match(/^\s*[\{\[]/)) {
+                inCodeBlock = true;
+                language = 'json';
+                codeBlock = [line];
+            } else {
+                formattedText += line + '\n';
+            }
+        } else {
+            if (line.trim() === '' && codeBlock.length > 0) {
+                // End of block if empty line and we have code
+                formattedText += `\`\`\`${language}\n${codeBlock.join('\n')}\n\`\`\`\n\n`;
+                inCodeBlock = false;
+                codeBlock = [];
+                language = 'plaintext';
+            } else {
+                codeBlock.push(line);
+            }
+        }
+    }
+
+    if (inCodeBlock) {
+        formattedText += `\`\`\`${language}\n${codeBlock.join('\n')}\n\`\`\`\n`;
+    }
+
+    text = formattedText;
+
+    // Prima rileva blocchi di codice multi-linguaggio
+    const codeBlocks = detectCodeBlocks(text);
+
+    if (codeBlocks.length > 0) {
+        // Sostituisci ogni blocco con ```language\ncode\n```
+        let result = '';
+        let lastEnd = 0;
+
+        codeBlocks.forEach(block => {
+            result += text.substring(lastEnd, block.start);
+            result += `\n\`\`\`${block.language}\n${block.code}\n\`\`\`\n`;
+            lastEnd = block.end;
+        });
+
+        result += text.substring(lastEnd);
+        text = result;
+    }
+
     // Escape HTML
     let formatted = text
         .replace(/&/g, '&amp;')
@@ -607,6 +784,12 @@ function renderChart(chartData, chartType = 'line') {
 
 // ==================== PARSING RICHIESTE GRAFICI ====================
 function parseChartRequest(text) {
+    // Salta se la risposta contiene già codice
+    if (text.includes('```') || text.includes('`python') || text.includes('`javascript') ||
+        text.includes('`bash') || text.includes('`html') || text.includes('`css') ||
+        text.includes('`sql') || text.includes('`json')) {
+        return null;
+    }
     // Cerca pattern per richieste di grafici 3D
     const chart3dPatterns = [
         /crea un grafico 3d (superficie|surface|scatter|parametrica|parametric).*?(?:con|di)?(?:.*?funzione:?)?(.+)?/i,
@@ -639,10 +822,28 @@ function parseChartRequest(text) {
                 if (funcMatch && mappedType === 'surface') {
                     chartParams.func_str = funcMatch[1].trim();
                 }
+                // Per parametrico, estrai x=, y=, z=
+                if (mappedType === 'parametric') {
+                    const xMatch = params.match(/x\s*=\s*([^,]+)/i);
+                    const yMatch = params.match(/y\s*=\s*([^,]+)/i);
+                    const zMatch = params.match(/z\s*=\s*([^,]+)/i);
+                    if (xMatch) chartParams.func_x = xMatch[1].trim();
+                    if (yMatch) chartParams.func_y = yMatch[1].trim();
+                    if (zMatch) chartParams.func_z = zMatch[1].trim();
+                }
             }
 
             return generate3DChart(mappedType, chartParams);
         }
+    }
+
+    // Pattern per grafici 2D semplici (y = f(x))
+    const simpleFuncPattern = /grafico di y\s*=\s*([^\s,]+)/i;
+    const match = text.match(simpleFuncPattern);
+    if (match) {
+        const func = match[1].trim();
+        const data = generateFunctionData(func);
+        if (data) return renderChart(data, 'line');
     }
 
     // Cerca pattern per richieste di grafici 2D
@@ -682,6 +883,53 @@ function parseChartRequest(text) {
     }
 
     return null;
+}
+
+// ==================== GENERAZIONE DATI FUNZIONE ====================
+function generateFunctionData(func) {
+    try {
+        // Crea array di x da -10 a 10
+        const xValues = [];
+        const yValues = [];
+        for (let i = -20; i <= 20; i++) {
+            const x = i * 0.5; // Passo 0.5
+            xValues.push(x);
+
+            // Valuta la funzione in modo sicuro
+            let y = 0;
+            try {
+                // Sostituisci x con il valore
+                const expression = func.replace(/x/g, `(${x})`);
+                // Usa eval con funzioni matematiche
+                y = eval(expression.replace(/sin\(/g, 'Math.sin(')
+                                   .replace(/cos\(/g, 'Math.cos(')
+                                   .replace(/tan\(/g, 'Math.tan(')
+                                   .replace(/sqrt\(/g, 'Math.sqrt(')
+                                   .replace(/exp\(/g, 'Math.exp(')
+                                   .replace(/log\(/g, 'Math.log(')
+                                   .replace(/\^/g, '**'));
+            } catch (e) {
+                console.log('Errore valutazione funzione:', e);
+                return null;
+            }
+            yValues.push(y);
+        }
+
+        return {
+            labels: xValues.map(x => x.toFixed(1)),
+            datasets: [{
+                label: `y = ${func}`,
+                data: yValues,
+                borderColor: 'rgb(75, 192, 192)',
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                tension: 0.1,
+                fill: false
+            }]
+        };
+    } catch (e) {
+        console.log('Errore generazione dati funzione:', e);
+        return null;
+    }
 }
 
 // ==================== GENERAZIONE GRAFICI AUTOMATICA ====================
@@ -1125,7 +1373,7 @@ function testSpeech() {
         return;
     }
 
-    const testText = "Ciao! Questa è una prova della sintesi vocale. L'Assistente AI può ora leggere le risposte ad alta voce.";
+    const testText = "TEST";
     speakText(testText);
     showNotification('Test sintesi vocale avviato', 'info');
 }
@@ -1263,6 +1511,29 @@ function copyMessage(buttonElement) {
     });
 }
 
+// ==================== MODIFICA MESSAGGI ====================
+function editMessage(buttonElement) {
+    // Trova il contenuto del messaggio
+    const bubble = buttonElement.parentElement.parentElement;
+    const messageContent = bubble.querySelector('.bubble');
+
+    // Estrai testo pulito
+    let textToEdit = messageContent.textContent || messageContent.innerText || '';
+
+    // Rimuovi timestamp se presente
+    textToEdit = textToEdit.replace(/\d{1,2}:\d{2}/, '').trim();
+
+    // Inserisci nel campo input
+    userInput.value = textToEdit;
+    userInput.focus();
+    userInput.select(); // Seleziona tutto per facilitare la modifica
+
+    // Scorri al campo input
+    userInput.scrollIntoView({ behavior: 'smooth' });
+
+    showNotification('Messaggio caricato nel campo input per modifica', 'info');
+}
+
 // ==================== UTILITIES ====================
 function showNotification(message, type = 'info') {
     const notification = document.createElement('div');
@@ -1297,7 +1568,12 @@ function changeMode(mode) {
     currentMode = mode;
     localStorage.setItem('ai_mode', mode);
     updateCurrentMode(mode);
-    showNotification(`Modalità cambiata: ${mode}`, 'success');
+    const modeNames = {
+        'auto': 'Auto',
+        'math': 'Esempio di Python',
+        'finance': 'Finanza'
+    };
+    showNotification(`Modalità cambiata: ${modeNames[mode]}`, 'success');
 }
 
 function changeModel(model) {
@@ -1315,7 +1591,7 @@ function updateModelStatus(model) {
 function updateCurrentMode(mode) {
     const modeNames = {
         'auto': 'Auto',
-        'math': 'Matematica',
+        'math': 'Esempio di Python',
         'finance': 'Finanza'
     };
     document.getElementById('currentMode').textContent = `Modalità: ${modeNames[mode]}`;
@@ -1403,7 +1679,7 @@ function login() {
         apiKey = key;
         localStorage.setItem('ai_api_key', key);
         document.getElementById('loginModal').style.display = 'none';
-        userStatus.textContent = 'Connesso';
+        userStatus.textContent = 'Demo User';
         connectToBackend();
         showNotification('Accesso effettuato!', 'success');
     } else {
@@ -1438,9 +1714,18 @@ function savePrompts() {
     showNotification('Prompt salvati', 'success');
 }
 
-function toggleMenu() {
-    const dropdown = document.getElementById('menuDropdown');
-    dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const isOpen = sidebar.classList.contains('open');
+
+    if (isOpen) {
+        sidebar.classList.remove('open');
+        overlay.style.display = 'none';
+    } else {
+        sidebar.classList.add('open');
+        overlay.style.display = 'block';
+    }
 }
 
 function closeSettings() {

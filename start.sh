@@ -117,7 +117,7 @@ if ! ollama list 2>/dev/null | grep -q "llama3.2"; then
 fi
 
 # Avvia Backend
-log "Avvio Backend..."
+log "Avvio backend in corso..."
 cd backend
 
 # Crea ambiente virtuale se necessario
@@ -131,20 +131,20 @@ fi
 source venv/bin/activate
 pip install --quiet -r requirements.txt
 python -c "import numpy, requests" || { echo "Errore: pacchetti Python non installati"; exit 1; }
-python server.py > ../logs/backend.log 2>&1 &
+./venv/bin/python server.py > ../logs/backend.log 2>&1 &
 BACKEND_PID=$!
 
 cd ..
 sleep 15
 
 # Verifica Backend
-if ! curl -s http://localhost:5003/api/health > /dev/null 2>&1; then
+if ! curl -s http://localhost:5005/api/health > /dev/null 2>&1; then
     error "Backend non risponde - controlla logs/backend.log"
     kill $BACKEND_PID 2>/dev/null || true
     exit 1
 fi
 
-success "Backend avviato (porta 5003)"
+success "Backend avviato correttamente sulla porta 5005"
 
 # Avvia Frontend
 log "Avvio Frontend..."
@@ -172,8 +172,8 @@ echo -e "${GREEN}║         🎉 SISTEMA AVVIATO CON SUCCESSO!         ║${NC}
 echo -e "${GREEN}╚══════════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "${GREEN}🌐 Frontend:${NC} http://localhost:8080"
-echo -e "${GREEN}🔧 Backend:${NC}  http://localhost:5003"
-echo -e "${GREEN}📚 API Docs:${NC} http://localhost:5003/docs"
+echo -e "${GREEN}🔧 Backend:${NC}  http://localhost:5005"
+echo -e "${GREEN}📚 API Docs:${NC} http://localhost:5005/docs"
 echo ""
 echo -e "${GREEN}🔑 API Key:${NC} demo_key_123"
 echo -e "${YELLOW}🔊 TTS:${NC} Configura speech-dispatcher per voci italiane"
