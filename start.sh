@@ -19,14 +19,38 @@ error() { echo -e "${RED}✗${NC} $1"; }
 # Banner
 echo -e "${GREEN}"
 echo "╔══════════════════════════════════════════════════╗"
-echo "║           ASSISTENTE AI - AVVIO SICURO          ║"
-echo "║                  Versione 4.0                   ║"
+echo "║           ASSISTENTE AI - AVVIO SICURO           ║"
+echo "║                  Versione 4.0                    ║"
 echo "╚══════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
 # Directory base
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$BASE_DIR"
+
+# Primo avvio - collegamento desktop
+if [ ! -f ".first_run" ]; then
+    echo ""
+    read -p "Vuoi creare un collegamento sul desktop? (s/n): " answer
+    if [[ $answer =~ ^[sS]$ ]]; then
+        DESKTOP_FILE="$HOME/Desktop/Assistente_AI.desktop"
+        cat > "$DESKTOP_FILE" << EOF
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Assistente AI
+Comment=Avvia l'Assistente AI
+Exec=$BASE_DIR/start.sh
+Icon=utilities-terminal
+Terminal=true
+Categories=Utility;
+EOF
+        chmod +x "$DESKTOP_FILE"
+        success "Collegamento creato sul desktop"
+    fi
+    touch .first_run
+    echo ""
+fi
 
 # Verifica dipendenze
 log "Verifica dipendenze..."
@@ -40,6 +64,27 @@ if ! command -v ollama &> /dev/null; then
 fi
 
 success "Dipendenze OK"
+
+# Controllo librerie TTS
+if command -v speech-dispatcher &> /dev/null && command -v espeak-ng &> /dev/null && command -v mbrola &> /dev/null; then
+    success "Librerie TTS installate (speech-dispatcher, espeak-ng, mbrola)"
+
+    # Avvia speech-dispatcher se non attivo
+    if ! pgrep -x "speech-dispatcher" > /dev/null; then
+        log "Avvio speech-dispatcher..."
+        speech-dispatcher &
+        sleep 2
+    fi
+
+    # Test TTS
+    if command -v spd-say &> /dev/null; then
+        log "Test sintesi vocale..."
+        spd-say -o espeak-ng -l it -r -50 -p 0 -i 100 "Assistente AI avviato con sintesi vocale italiana"
+        success "TTS test completato"
+    fi
+else
+    warning "Librerie TTS mancanti - installa: sudo apt install speech-dispatcher espeak-ng mbrola mbrola-it3 mbrola-en1"
+fi
 
 # Crea directory necessarie
 mkdir -p logs data/conversations data/models static
@@ -84,20 +129,22 @@ if [ ! -d "venv" ]; then
 fi
 
 source venv/bin/activate
+pip install --quiet -r requirements.txt
+python -c "import numpy, requests" || { echo "Errore: pacchetti Python non installati"; exit 1; }
 python server.py > ../logs/backend.log 2>&1 &
 BACKEND_PID=$!
 
 cd ..
-sleep 3
+sleep 15
 
 # Verifica Backend
-if ! curl -s http://localhost:5002/api/health > /dev/null 2>&1; then
+if ! curl -s http://localhost:5003/api/health > /dev/null 2>&1; then
     error "Backend non risponde - controlla logs/backend.log"
     kill $BACKEND_PID 2>/dev/null || true
     exit 1
 fi
 
-success "Backend avviato (porta 5002)"
+success "Backend avviato (porta 5003)"
 
 # Avvia Frontend
 log "Avvio Frontend..."
@@ -121,14 +168,15 @@ success "Frontend avviato (porta 8080)"
 # Successo!
 echo ""
 echo -e "${GREEN}╔══════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║         🎉 SISTEMA AVVIATO CON SUCCESSO!        ║${NC}"
+echo -e "${GREEN}║         🎉 SISTEMA AVVIATO CON SUCCESSO!         ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "${GREEN}🌐 Frontend:${NC} http://localhost:8080"
-echo -e "${GREEN}🔧 Backend:${NC}  http://localhost:5002"
-echo -e "${GREEN}📚 API Docs:${NC} http://localhost:5002/docs"
+echo -e "${GREEN}🔧 Backend:${NC}  http://localhost:5003"
+echo -e "${GREEN}📚 API Docs:${NC} http://localhost:5003/docs"
 echo ""
 echo -e "${GREEN}🔑 API Key:${NC} demo_key_123"
+echo -e "${YELLOW}🔊 TTS:${NC} Configura speech-dispatcher per voci italiane"
 echo ""
 echo -e "${YELLOW}💡 Suggerimenti:${NC}"
 echo "  • Usa Chrome/Edge per il riconoscimento vocale"

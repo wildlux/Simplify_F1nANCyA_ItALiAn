@@ -2,13 +2,41 @@
 // Versione: 4.0
 
 // ==================== CONFIGURAZIONE ====================
-const API_URL = 'http://localhost:5002';
+const API_URL = 'http://localhost:5003';
 let apiKey = null;
 let currentMode = 'auto';
 let currentTheme = 'dark';
 let isConnected = false;
 let isListening = false;
 let recognition = null;
+let cancelController = null;
+let currentModel = 'llama3.2:3b';
+let prompts = {
+    general: "Sei un assistente AI utile. Rispondi in italiano.",
+    math: "Sei un assistente matematico. Mostra i calcoli.",
+    finance: "Sei un consulente finanziario italiano. Rispondi in italiano."
+};
+
+async function loadModels() {
+    try {
+        const response = await fetch(`${API_URL}/api/models`);
+        const data = await response.json();
+        const select = document.getElementById('modelSelect');
+        const currentValue = select.value; // Preserve current selection
+        select.innerHTML = '';
+        data.models.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model;
+            option.textContent = model + (model === data.recommended ? ' (consigliato)' : '');
+            select.appendChild(option);
+        });
+        // Set to currentModel if exists, else recommended
+        select.value = data.models.includes(currentModel) ? currentModel : data.recommended;
+        updateModelStatus(select.value);
+    } catch (e) {
+        console.error('Error loading models:', e);
+    }
+}
 
 // Elementi DOM
 const chatContainer = document.getElementById('chatContainer');
@@ -32,6 +60,19 @@ window.onload = function() {
         connectToBackend();
     }
 
+    // Click outside modal or menu to close
+    window.onclick = function(event) {
+        const modal = document.getElementById('settingsModal');
+        if (event.target == modal) {
+            modal.style.display = 'none';
+        }
+        const menuBtn = document.getElementById('menuBtn');
+        const dropdown = document.getElementById('menuDropdown');
+        if (!menuBtn.contains(event.target) && !dropdown.contains(event.target)) {
+            dropdown.style.display = 'none';
+        }
+    };
+
     // Setup event listeners
     setupEventListeners();
 
@@ -43,7 +84,9 @@ function loadPreferences() {
     const savedKey = localStorage.getItem('ai_api_key');
     const savedTheme = localStorage.getItem('ai_theme') || 'dark';
     const savedMode = localStorage.getItem('ai_mode') || 'auto';
+    const savedModel = localStorage.getItem('ai_model') || 'llama3.2:3b';
     const savedSpeech = localStorage.getItem('speech_enabled') === 'true';
+    const savedPrompts = localStorage.getItem('prompts');
 
     if (savedKey) {
         apiKey = savedKey;
@@ -52,10 +95,20 @@ function loadPreferences() {
 
     currentTheme = savedTheme;
     currentMode = savedMode;
+    currentModel = savedModel;
     speechEnabled = savedSpeech;
+
+    if (savedPrompts) {
+        try {
+            prompts = JSON.parse(savedPrompts);
+        } catch (e) {
+            console.error('Error loading prompts:', e);
+        }
+    }
 
     document.getElementById('modeSelect').value = savedMode;
     updateCurrentMode(savedMode);
+    document.getElementById('modelSelect').value = savedModel;
 
     // Applica preferenze sintesi vocale
     updateSpeechButton();
@@ -73,12 +126,16 @@ function loadPreferences() {
 }
 
 function setupEventListeners() {
-    // Invio messaggio con Ctrl+Enter
+    // Invio messaggio con Enter, Shift+Enter per andare a capo
     userInput.addEventListener('keydown', (e) => {
-        if (e.ctrlKey && e.key === 'Enter') {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            // Invio normale: invia messaggio
             e.preventDefault();
             sendMessage();
         }
+        // Shift+Enter: permette il comportamento predefinito (andare a capo)
+        // Non serve preventDefault() qui perché vogliamo il comportamento naturale
+
         if (e.key === 'Escape' && isListening) {
             stopVoiceRecognition();
         }
@@ -101,7 +158,9 @@ async function connectToBackend() {
 
             isConnected = true;
             updateConnectionStatus('online', 'Connesso');
-            modelStatus.textContent = data.system?.model || 'llama3.2:3b';
+
+            // Carica modelli
+            await loadModels();
 
             // Benvenuto
             setTimeout(() => {
@@ -155,10 +214,23 @@ function showWelcomeMessage() {
             <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
                 <li><strong>Calcoli matematici</strong> complessi e spiegazioni</li>
                 <li><strong>Consulenza finanziaria</strong> e fiscale</li>
-                <li><strong>Grafici</strong> e visualizzazioni dati</li>
+                <li><strong>Grafici 2D e 3D</strong> e visualizzazioni dati</li>
                 <li><strong>Analisi</strong> e risposte dettagliate</li>
                 <li><strong>Input vocale</strong> (clicca 🎤 per parlare)</li>
+                <li><strong>Sintesi vocale</strong> per ascoltare le risposte</li>
             </ul>
+        </div>
+
+        <div style="background: rgba(16, 185, 129, 0.1); padding: 1rem; border-radius: 8px; margin: 1rem 0;">
+            <h4><i class="fas fa-keyboard"></i> Scorciatoie da tastiera:</h4>
+            <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+                <li><strong>Enter</strong>: Invia messaggio</li>
+                <li><strong>Shift+Enter</strong>: Vai a capo</li>
+                <li><strong>Escape</strong>: Ferma input vocale (se attivo)</li>
+            </ul>
+            <p style="margin-top: 0.5rem; font-size: 0.9rem;">
+                <strong>Per ogni risposta:</strong> usa <i class="fas fa-volume-up"></i> per ascoltare e <i class="fas fa-copy"></i> per copiare
+            </p>
         </div>
 
         <div style="margin-top: 1.5rem;">
@@ -183,9 +255,27 @@ function addMessage(sender, content, showTime = true) {
 
     const timeStr = showTime ? new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '';
 
+    // Format content for AI messages
+    if (sender === 'ai') {
+        content = formatResponse(content);
+    }
+
+    // Aggiungi pulsanti solo per messaggi AI
+    const actionButtons = sender === 'ai' ? `
+        <div class="message-actions">
+            <button class="action-btn speak-btn" onclick="speakText(this)" title="Leggi ad alta voce">
+                <i class="fas fa-volume-up"></i>
+            </button>
+            <button class="action-btn copy-btn" onclick="copyMessage(this)" title="Copia messaggio">
+                <i class="fas fa-copy"></i>
+            </button>
+        </div>
+    ` : '';
+
     messageDiv.innerHTML = `
         <div class="bubble">
             ${content}
+            ${actionButtons}
             ${showTime ? `<span class="message-time">${timeStr}</span>` : ''}
         </div>
     `;
@@ -210,6 +300,7 @@ function showTypingIndicator() {
                     <div class="typing-dot"></div>
                 </div>
                 <span>Assistente sta scrivendo...</span>
+                <button class="cancel-btn" onclick="cancelRequest()">Annulla</button>
             </div>
         </div>
     `;
@@ -239,6 +330,10 @@ async function sendMessage() {
     // Mostra indicatore typing
     showTypingIndicator();
 
+    // Crea controller per annullare
+    cancelController = new AbortController();
+    const signal = cancelController.signal;
+
     try {
         const response = await fetch(`${API_URL}/api/chat`, {
             method: 'POST',
@@ -247,11 +342,15 @@ async function sendMessage() {
             },
             body: JSON.stringify({
                 text: text,
-                mode: currentMode
-            })
+                mode: currentMode,
+                model: currentModel,
+                prompts: prompts
+            }),
+            signal: signal
         });
 
         hideTypingIndicator();
+        cancelController = null;
 
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -275,8 +374,13 @@ async function sendMessage() {
 
     } catch (error) {
         hideTypingIndicator();
-        addMessage('ai', `❌ Errore: ${error.message}`);
-        console.error('Chat error:', error);
+        cancelController = null;
+        if (error.name === 'AbortError') {
+            addMessage('ai', 'Richiesta annullata.');
+        } else {
+            addMessage('ai', `❌ Errore: ${error.message}`);
+            console.error('Chat error:', error);
+        }
     }
 }
 
@@ -503,7 +607,45 @@ function renderChart(chartData, chartType = 'line') {
 
 // ==================== PARSING RICHIESTE GRAFICI ====================
 function parseChartRequest(text) {
-    // Cerca pattern per richieste di grafici nel testo
+    // Cerca pattern per richieste di grafici 3D
+    const chart3dPatterns = [
+        /crea un grafico 3d (superficie|surface|scatter|parametrica|parametric).*?(?:con|di)?(?:.*?funzione:?)?(.+)?/i,
+        /disegna un grafico 3d (superficie|surface|scatter|parametrica|parametric).*?(?:con|di)?(?:.*?funzione:?)?(.+)?/i,
+        /mostra un grafico 3d (superficie|surface|scatter|parametrica|parametric).*?(?:con|di)?(?:.*?funzione:?)?(.+)?/i,
+        /grafico 3d (superficie|surface|scatter|parametrica|parametric).*?(?:con|di)?(?:.*?funzione:?)?(.+)?/i
+    ];
+
+    for (const pattern of chart3dPatterns) {
+        const match = text.match(pattern);
+        if (match) {
+            const chartType = match[1].toLowerCase();
+            const params = match[2] ? match[2].trim() : '';
+
+            let typeMap = {
+                'superficie': 'surface',
+                'surface': 'surface',
+                'scatter': 'scatter',
+                'parametrica': 'parametric',
+                'parametric': 'parametric'
+            };
+
+            const mappedType = typeMap[chartType] || 'surface';
+
+            // Estrai parametri dalla stringa se presente
+            let chartParams = {};
+            if (params) {
+                // Prova a estrarre funzione per superficie
+                const funcMatch = params.match(/z?\s*=\s*([^,]+)/i);
+                if (funcMatch && mappedType === 'surface') {
+                    chartParams.func_str = funcMatch[1].trim();
+                }
+            }
+
+            return generate3DChart(mappedType, chartParams);
+        }
+    }
+
+    // Cerca pattern per richieste di grafici 2D
     const chartPatterns = [
         /crea un grafico (linee|barre|torta|dispersione|scatter).*?con dati:?(.+)/i,
         /disegna un grafico (linee|barre|torta|dispersione|scatter).*?con:?(.+)/i,
@@ -570,6 +712,197 @@ function generateSampleChart(type = 'line') {
     };
 
     return renderChart(sampleData, type);
+}
+
+// ==================== GRAFICI 3D ====================
+function render3DChart(chartData) {
+    const chartId = 'chart3d-' + Math.random().toString(36).substr(2, 9);
+    const containerHtml = `<div id="${chartId}" class="chart3d-container" style="width: 100%; height: 400px; margin: 1rem 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);"></div>`;
+
+    // Crea il grafico 3D dopo un breve delay
+    setTimeout(() => {
+        const container = document.getElementById(chartId);
+        if (!container) return;
+
+        // Inizializza Three.js
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.setClearColor(0xffffff, 1);
+        container.appendChild(renderer.domElement);
+
+        // Aggiungi luci
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(1, 1, 1);
+        scene.add(directionalLight);
+
+        // Aggiungi controlli orbitali
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // Crea geometria basata sul tipo
+        if (chartData.type === 'surface') {
+            create3DSurface(scene, chartData);
+        } else if (chartData.type === 'scatter3d') {
+            create3DScatter(scene, chartData);
+        } else if (chartData.type === 'parametric3d') {
+            create3DParametric(scene, chartData);
+        }
+
+        // Posiziona camera
+        camera.position.set(5, 5, 5);
+        controls.update();
+
+        // Aggiungi griglia
+        const gridHelper = new THREE.GridHelper(10, 10);
+        scene.add(gridHelper);
+
+        // Aggiungi assi
+        const axesHelper = new THREE.AxesHelper(5);
+        scene.add(axesHelper);
+
+        // Funzione di animazione
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Gestisci resize
+        window.addEventListener('resize', () => {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        });
+
+    }, 100);
+
+    return `<div class="chart-container" style="margin: 1rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);">
+        <h4 style="margin-bottom: 0.5rem;">${chartData.title || 'Grafico 3D'}</h4>
+        ${containerHtml}
+        <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.5rem;">
+            Usa il mouse per ruotare, zoomare e spostare la vista 3D
+        </p>
+    </div>`;
+}
+
+function create3DSurface(scene, data) {
+    const geometry = new THREE.PlaneGeometry(10, 10, data.x.length - 1, data.y.length - 1);
+    const vertices = geometry.attributes.position.array;
+
+    // Modifica i vertici Z basandosi sui dati
+    for (let i = 0; i < data.z.length; i++) {
+        for (let j = 0; j < data.z[i].length; j++) {
+            const vertexIndex = (i * data.z[i].length + j) * 3 + 2;
+            if (vertexIndex < vertices.length) {
+                vertices[vertexIndex] = data.z[i][j] * 0.1; // Scala per visibilità
+            }
+        }
+    }
+
+    geometry.attributes.position.needsUpdate = true;
+    geometry.computeVertexNormals();
+
+    const material = new THREE.MeshLambertMaterial({
+        color: 0x4CAF50,
+        side: THREE.DoubleSide,
+        wireframe: false
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    scene.add(mesh);
+
+    // Aggiungi wireframe
+    const wireframeMaterial = new THREE.MeshBasicMaterial({ color: 0x000000, wireframe: true });
+    const wireframeMesh = new THREE.Mesh(geometry, wireframeMaterial);
+    scene.add(wireframeMesh);
+}
+
+function create3DScatter(scene, data) {
+    const points = [];
+    for (let i = 0; i < data.x.length; i++) {
+        points.push(new THREE.Vector3(data.x[i], data.y[i], data.z[i]));
+    }
+
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.PointsMaterial({
+        color: 0xff0000,
+        size: 0.1,
+        vertexColors: false
+    });
+    const pointCloud = new THREE.Points(geometry, material);
+    scene.add(pointCloud);
+}
+
+function create3DParametric(scene, data) {
+    const points = [];
+    for (let i = 0; i < data.x.length; i++) {
+        points.push(new THREE.Vector3(data.x[i], data.y[i], data.z[i]));
+    }
+
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({ color: 0x0000ff, linewidth: 2 });
+    const line = new THREE.Line(geometry, material);
+    scene.add(line);
+}
+
+async function generate3DChart(type = 'surface', customParams = {}) {
+    try {
+        // Parametri predefiniti per tipo
+        let defaultParams = {};
+        if (type === 'surface') {
+            defaultParams = {
+                func_str: customParams.func_str || 'x**2 + y**2',
+                x_range: [-3, 3],
+                y_range: [-3, 3],
+                points: 30
+            };
+        } else if (type === 'scatter') {
+            defaultParams = {
+                points: 200
+            };
+        } else if (type === 'parametric') {
+            defaultParams = {
+                func_x: 'cos(t)',
+                func_y: 'sin(t)',
+                func_z: 't/2',
+                t_range: [0, 4*3.14159],
+                points: 200
+            };
+        }
+
+        // Unisci parametri personalizzati con quelli predefiniti
+        const params = { ...defaultParams, ...customParams };
+
+        const response = await fetch(`${API_URL}/api/chart3d`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                type: type,
+                params: params
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (data.error) {
+            return `<div class="error-message">Errore nel grafico 3D: ${data.error}</div>`;
+        }
+
+        return render3DChart(data.chart3d);
+
+    } catch (error) {
+        console.error('Errore generazione grafico 3D:', error);
+        return `<div class="error-message">Errore nella generazione del grafico 3D: ${error.message}</div>`;
+    }
 }
 
 // ==================== HIGHLIGHT CODICE ====================
@@ -651,6 +984,16 @@ function initSpeech() {
         speechSynthesis = window.speechSynthesis;
         console.log('✅ Text-to-Speech supportato');
 
+        // Log voci quando caricate
+        speechSynthesis.onvoiceschanged = () => {
+            const voices = speechSynthesis.getVoices();
+            console.log('Voci disponibili:', voices.map(v => `${v.lang}: ${v.name}`));
+            if (voices.length === 0) {
+                console.warn('Nessuna voce TTS trovata - uso default');
+                showNotification('Voci TTS non caricate. Riavvia Chrome e speech-dispatcher per abilitarle', 'info');
+            }
+        };
+
         // Abilita automaticamente la sintesi vocale per una migliore UX
         speechEnabled = localStorage.getItem('speech_enabled') !== 'false'; // Default true
         updateSpeechButton();
@@ -716,6 +1059,29 @@ function speakText(text, lang = 'it-IT') {
     utterance.pitch = 1.0;
     utterance.volume = 1.0;
 
+    // Seleziona una voce italiana se disponibile
+    const voices = speechSynthesis.getVoices();
+    if (voices.length > 0) {
+        const italianVoice = voices.find(voice => voice.lang.startsWith('it'));
+        if (italianVoice) {
+            utterance.voice = italianVoice;
+            console.log('🎵 Voce italiana selezionata:', italianVoice.name);
+        } else {
+            console.log('⚠️ Nessuna voce italiana trovata, provo con inglese');
+            utterance.lang = 'en-US';
+            const englishVoice = voices.find(voice => voice.lang.startsWith('en'));
+            if (englishVoice) {
+                utterance.voice = englishVoice;
+                console.log('🎵 Voce inglese selezionata:', englishVoice.name);
+            } else {
+                console.log('⚠️ Nessuna voce inglese trovata, uso predefinita');
+            }
+        }
+    } else {
+        console.log('⚠️ Nessuna voce disponibile, uso predefinita italiana');
+        utterance.lang = 'it-IT';
+    }
+
     // Gestisci gli eventi
     utterance.onstart = () => {
         console.log('🎵 Lettura vocale iniziata');
@@ -764,6 +1130,139 @@ function testSpeech() {
     showNotification('Test sintesi vocale avviato', 'info');
 }
 
+// ==================== AZIONI MESSAGGI ====================
+function speakText(buttonElement) {
+    if (!speechSynthesis) {
+        showNotification('Sintesi vocale non supportata', 'error');
+        return;
+    }
+
+    // Assicurati che buttonElement sia il button
+    if (buttonElement.tagName !== 'BUTTON') {
+        buttonElement = buttonElement.parentElement;
+    }
+    if (!buttonElement || buttonElement.tagName !== 'BUTTON') return;
+
+    // Trova il contenuto del messaggio
+    const bubble = buttonElement.parentElement.parentElement;
+    const messageContent = bubble.querySelector('.message-content') ||
+                          bubble.querySelector('.typing-indicator') ||
+                          bubble;
+
+    // Estrai solo il testo, escludendo HTML e pulsanti
+    let textToSpeak = '';
+
+    // Rimuovi gli elementi dei pulsanti e timestamp dal testo da leggere
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = messageContent.innerHTML;
+
+    // Rimuovi i pulsanti e timestamp
+    const actionsToRemove = tempDiv.querySelectorAll('.message-actions, .message-time');
+    actionsToRemove.forEach(el => el.remove());
+
+    // Estrai testo pulito
+    textToSpeak = tempDiv.textContent || tempDiv.innerText || '';
+
+    // Rimuovi caratteri speciali e emoji, sostituisci newlines con spazi
+    textToSpeak = textToSpeak.replace(/[^\w\sàèéìòùÀÈÉÌÒÙ.,!?-]/g, '').replace(/\n/g, ' ').trim();
+
+    if (!textToSpeak) {
+        showNotification('Nessun testo da leggere', 'warning');
+        return;
+    }
+
+    // Ferma eventuali sintesi in corso
+    stopSpeech();
+
+    // Crea e avvia la sintesi
+    const utterance = new SpeechSynthesisUtterance(textToSpeak);
+    utterance.lang = 'it-IT'; // Italiano
+    utterance.rate = 0.9; // Velocità leggermente ridotta
+    utterance.pitch = 1; // Tono normale
+    utterance.volume = 0.8; // Volume leggermente ridotto
+
+    // Gestisci gli eventi
+    utterance.onstart = () => {
+        buttonElement.innerHTML = '<i class="fas fa-stop"></i>';
+        buttonElement.title = 'Ferma lettura';
+        buttonElement.onclick = () => stopSpeechFromButton(buttonElement);
+    };
+
+    utterance.onend = () => {
+        buttonElement.innerHTML = '<i class="fas fa-volume-up"></i>';
+        buttonElement.title = 'Leggi ad alta voce';
+        buttonElement.onclick = () => speakText(buttonElement);
+    };
+
+    utterance.onerror = (event) => {
+        console.error('Errore sintesi vocale:', event);
+        buttonElement.innerHTML = '<i class="fas fa-volume-up"></i>';
+        buttonElement.title = 'Leggi ad alta voce';
+        buttonElement.onclick = () => speakText(buttonElement);
+        showNotification('Errore nella sintesi vocale', 'error');
+    };
+
+    speechSynthesis.speak(utterance);
+}
+
+function stopSpeechFromButton(buttonElement) {
+    stopSpeech();
+    buttonElement.innerHTML = '<i class="fas fa-volume-up"></i>';
+    buttonElement.title = 'Leggi ad alta voce';
+    buttonElement.onclick = () => speakText(buttonElement);
+}
+
+function copyMessage(buttonElement) {
+    // Assicurati che buttonElement sia il button
+    if (buttonElement.tagName !== 'BUTTON') {
+        buttonElement = buttonElement.parentElement;
+    }
+    if (!buttonElement || buttonElement.tagName !== 'BUTTON') return;
+
+    // Trova il contenuto del messaggio
+    const bubble = buttonElement.parentElement.parentElement;
+    const messageContent = bubble.querySelector('.message-content') ||
+                          bubble.querySelector('.typing-indicator') ||
+                          bubble;
+
+    // Estrai solo il testo, escludendo HTML e pulsanti
+    let textToCopy = '';
+
+    // Rimuovi gli elementi dei pulsanti e timestamp dal testo da copiare
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = messageContent.innerHTML;
+
+    // Rimuovi i pulsanti e timestamp
+    const actionsToRemove = tempDiv.querySelectorAll('.message-actions, .message-time');
+    actionsToRemove.forEach(el => el.remove());
+
+    // Estrai testo pulito
+    textToCopy = tempDiv.textContent || tempDiv.innerText || '';
+
+    if (!textToCopy.trim()) {
+        showNotification('Nessun testo da copiare', 'warning');
+        return;
+    }
+
+    // Copia negli appunti
+    navigator.clipboard.writeText(textToCopy.trim()).then(() => {
+        // Feedback visivo
+        const originalIcon = buttonElement.innerHTML;
+        buttonElement.innerHTML = '<i class="fas fa-check"></i>';
+        buttonElement.style.color = 'var(--success)';
+
+        setTimeout(() => {
+            buttonElement.innerHTML = originalIcon;
+            buttonElement.style.color = '';
+        }, 1000);
+
+        showNotification('Messaggio copiato negli appunti!', 'success');
+    }).catch(err => {
+        console.error('Errore copia:', err);
+        showNotification('Errore nella copia del messaggio', 'error');
+    });
+}
+
 // ==================== UTILITIES ====================
 function showNotification(message, type = 'info') {
     const notification = document.createElement('div');
@@ -799,6 +1298,18 @@ function changeMode(mode) {
     localStorage.setItem('ai_mode', mode);
     updateCurrentMode(mode);
     showNotification(`Modalità cambiata: ${mode}`, 'success');
+}
+
+function changeModel(model) {
+    currentModel = model;
+    localStorage.setItem('ai_model', model);
+    updateModelStatus(model);
+    showNotification(`Modello cambiato: ${model}`, 'success');
+}
+
+function updateModelStatus(model) {
+    const modelStatus = document.getElementById('modelStatus');
+    modelStatus.textContent = model;
 }
 
 function updateCurrentMode(mode) {
@@ -905,6 +1416,37 @@ function useDemoKey() {
     login();
 }
 
+function cancelRequest() {
+    if (cancelController) {
+        cancelController.abort();
+    }
+}
+
+function showSettings() {
+    document.getElementById('settingsModal').style.display = 'flex';
+    document.getElementById('generalPrompt').value = prompts.general;
+    document.getElementById('mathPrompt').value = prompts.math;
+    document.getElementById('financePrompt').value = prompts.finance;
+}
+
+function savePrompts() {
+    prompts.general = document.getElementById('generalPrompt').value;
+    prompts.math = document.getElementById('mathPrompt').value;
+    prompts.finance = document.getElementById('financePrompt').value;
+    localStorage.setItem('prompts', JSON.stringify(prompts));
+    closeSettings();
+    showNotification('Prompt salvati', 'success');
+}
+
+function toggleMenu() {
+    const dropdown = document.getElementById('menuDropdown');
+    dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+}
+
+function closeSettings() {
+    document.getElementById('settingsModal').style.display = 'none';
+}
+
 function logout() {
     if (confirm('Vuoi davvero effettuare il logout? Verrai disconnesso e la conversazione verrà pulita.')) {
         apiKey = null;
@@ -988,7 +1530,8 @@ function showHelp() {
         <div style="margin: 1rem 0;">
             <h4>Comandi rapidi:</h4>
             <ul>
-                <li><strong>Ctrl+Enter</strong>: Invia messaggio</li>
+                <li><strong>Enter</strong>: Invia messaggio</li>
+                <li><strong>Shift+Enter</strong>: Vai a capo</li>
                 <li><strong>🎤</strong>: Input vocale</li>
                 <li><strong>🔊</strong>: Sintesi vocale (lettura risposte)</li>
                 <li><strong>📊</strong>: Generatore grafici</li>
