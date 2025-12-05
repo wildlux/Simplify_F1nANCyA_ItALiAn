@@ -1,248 +1,208 @@
-# 🤖 Assistente AI - Linux Edition
+# 🤖 Assistente AI - Progetto Completo
 
-**Un assistente AI completo con riconoscimento vocale, matematica e finanza**
+**Un assistente AI avanzato per matematica e finanza con riconoscimento vocale**
+
+[![GitHub](https://img.shields.io/badge/GitHub-Repository-blue)](https://github.com/wildlux/Simplify_F1nANC-_ItALiAn)
+[![Python](https://img.shields.io/badge/Python-3.8+-green)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Framework-red)](https://fastapi.tiangolo.com/)
+[![Ollama](https://img.shields.io/badge/Ollama-AI-orange)](https://ollama.ai/)
+
+## 📋 Descrizione
+
+Questo progetto implementa un assistente AI completo specializzato in matematica e finanza italiana. Include:
+
+- **Backend**: Server FastAPI con streaming, database SQLite, monitoraggio sistema
+- **Frontend**: Interfaccia web moderna con temi multipli e riconoscimento vocale
+- **AI**: Integrazione con Ollama per modelli locali (Llama 3.2)
+- **Database**: Salvataggio conversazioni e gestione stato
+- **Sicurezza**: Autenticazione API Key e CORS configurato
 
 ## 🚀 Installazione Rapida
 
 ### Prerequisiti
-- Linux (Ubuntu 20.04+, Debian 11+, Arch, Fedora 34+)
+- Linux (Ubuntu/Debian/Arch/Fedora)
 - Python 3.8+
-- 4GB RAM (8GB raccomandati)
-- 5GB spazio disco
+- Ollama installato
 
-### 1. Installa Ollama
+### Comandi
 ```bash
+# 1. Clona repository
+git clone https://github.com/wildlux/Simplify_F1nANC-_ItALiAn.git
+cd Simplify_F1nANC-_ItALiAn
+
+# 2. Installa Ollama e modello
 curl -fsSL https://ollama.ai/install.sh | sh
 ollama pull llama3.2:3b
-```
 
-### 2. Installa Dipendenze
-```bash
-cd assistente-ai-completo/backend
+# 3. Installa dipendenze Python
+cd backend
 pip install -r requirements.txt
-```
+cd ..
 
-### 3. Avvia il Sistema
-```bash
-cd assistente-ai-completo
+# 4. Avvia sistema
 ./start.sh
 ```
 
-### 4. Apri nel Browser
-- Frontend: http://localhost:8080
-- API Key: `demo_key_123`
+## 🌐 Utilizzo
 
-## 🎯 Funzionalità
+1. Apri browser: http://localhost:8080
+2. Inserisci API Key: `demo_key_123`
+3. Inizia a chattare!
 
-✅ **Modalità Auto/Math/Finance** - Rilevamento automatico del tipo di domanda
-✅ **Riconoscimento Vocale** - Parla invece di scrivere (Chrome/Edge)
-✅ **Streaming Risposte** - Risposte in tempo reale come ChatGPT
-✅ **Database Conversazioni** - Salvataggio automatico delle chat
-✅ **API REST Completa** - Endpoint per integrazioni
-✅ **Interfaccia Moderna** - Design responsive e temi multipli
-✅ **Sistema di Autenticazione** - API Keys per sicurezza
-✅ **Monitoraggio Sistema** - Metriche di performance
-✅ **Logging Strutturato** - Debug e troubleshooting
+### Funzionalità Disponibili
+- 💬 Chat intelligente con AI
+- 📐 Calcoli matematici avanzati
+- 💰 Consulenza finanziaria italiana
+- 🎤 Riconoscimento vocale
+- 🎨 Temi personalizzabili (Dark/Light/Neon/Hacker)
+- 💾 Salvataggio conversazioni
+- 📤 Esportazione chat
+- 🔄 Streaming risposte in tempo reale
 
 ## 📁 Struttura Progetto
 
 ```
 assistente-ai-completo/
 ├── backend/           # Server FastAPI
-│   ├── server.py     # Backend principale
-│   ├── requirements.txt
-│   └── .env          # Configurazione
+│   ├── server.py     # API principale
+│   └── requirements.txt
 ├── frontend/         # Interfaccia web
 │   └── index.html    # UI completa
 ├── config/           # Configurazioni
-│   └── config.json   # Config principale
 ├── scripts/          # Script di gestione
-│   ├── start.sh      # Avvio principale
-│   └── create_project.sh # Script creazione
 ├── docs/             # Documentazione
-├── logs/             # File di log
 ├── data/             # Database e dati
+├── logs/             # File di log
 └── static/           # File statici
 ```
 
-## 🌐 Accesso
+## 🔧 API Endpoints
 
-- **Frontend**: http://localhost:8080
-- **Backend API**: http://localhost:5000
-- **API Docs**: http://localhost:5000/docs
-- **Health Check**: http://localhost:5000/api/health
+- `GET /` - Informazioni sistema
+- `GET /api/health` - Health check
+- `POST /api/chat` - Chat con AI
+- `GET /api/conversations` - Lista conversazioni
+- `POST /api/conversations` - Crea conversazione
 
-## 🔑 Credenziali
+## 🎯 Caratteristiche Tecniche
 
-API Keys predefinite:
-- `demo_key_123` - Utente dimostrazione
-- `admin_key_456` - Amministratore
-- `test_key_789` - Testing
+### Backend
+- **Framework**: FastAPI con async/await
+- **Database**: SQLite con SQLAlchemy-style queries
+- **Streaming**: Server-Sent Events per risposte real-time
+- **Monitoraggio**: Metriche CPU/RAM/Disco
+- **Logging**: Strutturato con livelli configurabili
 
-## 🎤 Funzionalità Voce
+### Frontend
+- **HTML5/CSS3**: Design responsive moderno
+- **JavaScript**: ES6+ con async/await
+- **Web APIs**: Speech Recognition, Local Storage
+- **Chart.js**: Grafici matematici
+- **MathJax**: Rendering formule matematiche
 
-### Requisiti
-```bash
-# Ubuntu/Debian
-sudo apt install alsa-utils pulseaudio
+### AI Integration
+- **Ollama**: Modelli locali per privacy
+- **Prompt Engineering**: Template specializzati per matematica/finanza
+- **Context Management**: Conversazioni persistenti
+- **Error Handling**: Fallback e retry logic
 
-# Arch
-sudo pacman -S alsa-utils pulseaudio
+## 🛠️ Script Disponibili
 
-# Fedora
-sudo dnf install alsa-utils pulseaudio
-```
-
-### Configurazione
-1. Usa Chrome/Chromium per il miglior supporto
-2. Permetti accesso microfono quando richiesto
-3. Clicca sull'icona 🎤 nell'interfaccia
-4. Parla normalmente in italiano
-
-## ⚡ Performance Tuning
-
-### Ottimizza Ollama
-```bash
-# Modifica ~/.ollama/config.json
-{
-  "num_parallel": 4,
-  "num_gpu_layers": 20,
-  "main_gpu": 0,
-  "use_mlock": true
-}
-```
-
-### Ottimizza Python
-```bash
-export OMP_NUM_THREADS=4
-export MKL_NUM_THREADS=4
-export PYTHONUNBUFFERED=1
-```
+- `start.sh` - Avvio completo sistema
+- `status.sh` - Monitoraggio processi e porte
+- `test_system.sh` - Verifica configurazione
+- `create_project.sh` - Ricostruzione progetto
 
 ## 📊 Monitoraggio
 
 ```bash
 # Stato sistema
-./start.sh status
-
-# Uso risorse
-htop
+./status.sh
 
 # Log in tempo reale
-tail -f logs/*.log
+tail -f logs/backend.log
+tail -f logs/frontend.log
 
-# Metriche backend
-curl http://localhost:5000/api/health | jq .
+# Test API
+curl http://localhost:5000/api/health
 ```
 
-## 🔧 Troubleshooting
+## 🔒 Sicurezza
 
-### Ollama non si avvia
+- Autenticazione API Key
+- CORS configurato per sicurezza
+- Input sanitization
+- Rate limiting (configurabile)
+- No esposizione dati sensibili
+
+## 🐛 Troubleshooting
+
+### Problemi Comuni
+
+**Backend non si avvia:**
 ```bash
-# Controlla se è in esecuzione
+# Verifica dipendenze
+cd backend && pip list | grep fastapi
+
+# Controlla log
+tail -f ../logs/backend.log
+```
+
+**Frontend non carica:**
+```bash
+# Verifica porta
+lsof -i :8080
+
+# Test connessione
+curl -I http://localhost:8080
+```
+
+**Ollama non risponde:**
+```bash
+# Stato servizio
 systemctl status ollama
 
 # Riavvia
 sudo systemctl restart ollama
-
-# Log dettagliati
-journalctl -u ollama -f
 ```
 
-### Backend non risponde
-```bash
-# Controlla porta
-sudo netstat -tlnp | grep :5000
+**Microfono non funziona:**
+- Usa Chrome/Edge
+- Permetti accesso microfono nelle impostazioni browser
+- Verifica dispositivi audio: `arecord -l`
 
-# Verifica dipendenze
-cd backend
-pip list | grep fastapi
+## 📈 Performance
 
-# Log errori
-tail -f ../logs/backend.log
-```
+- **CPU**: Ottimizzato per sistemi multi-core
+- **RAM**: ~500MB per backend + modello AI
+- **Disco**: ~2GB per modello AI + dati
+- **Risposta**: <2 secondi per risposte normali
 
-### Microfono non funziona
-```bash
-# Test hardware
-arecord -l
+## 🤝 Contributi
 
-# Test registrazione
-arecord --duration=5 --format=cd test.wav
-aplay test.wav
+Il progetto è open-source. Per contribuire:
 
-# Controlla permessi
-ls -la /dev/snd/
-```
-
-## 🚀 Deployment in Produzione
-
-### Nginx Reverse Proxy
-```nginx
-# /etc/nginx/sites-available/assistente-ai
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    location / {
-        proxy_pass http://localhost:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    location /api {
-        proxy_pass http://localhost:5000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
-
-### Systemd Services
-```bash
-# /etc/systemd/system/assistente-ai.service
-[Unit]
-Description=Assistente AI Service
-After=network.target ollama.service
-
-[Service]
-Type=simple
-User=ai-user
-WorkingDirectory=/opt/assistente-ai
-Environment="PATH=/opt/assistente-ai/venv/bin"
-ExecStart=/opt/assistente-ai/venv/bin/python server.py
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-```
-
-## 🧪 Test Rapidi
-
-```bash
-# Test Ollama
-curl http://localhost:11434/api/tags
-
-# Test Backend
-curl http://localhost:5000/api/health
-
-# Test Frontend
-curl -I http://localhost:8080
-```
+1. Fork del repository
+2. Crea branch feature: `git checkout -b feature/nome`
+3. Commit changes: `git commit -m 'Aggiunta feature'`
+4. Push: `git push origin feature/nome`
+5. Crea Pull Request
 
 ## 📄 Licenza
 
-MIT License - Libero uso, modifica e distribuzione.
+MIT License - Vedi file LICENSE per dettagli.
 
-Creato specificamente per Linux 🐧
-Ottimizzato per prestazioni e semplicità
+## 👨‍💻 Autore
+
+**wildlux** - [GitHub](https://github.com/wildlux)
+
+## 🙏 Ringraziamenti
+
+- [FastAPI](https://fastapi.tiangolo.com/) - Framework web moderno
+- [Ollama](https://ollama.ai/) - AI locale
+- [Chart.js](https://www.chartjs.org/) - Grafici
+- [MathJax](https://www.mathjax.org/) - Formule matematiche
 
 ---
 
-**Versione**: 4.0
-**Data**: 2024-12-05
-**Supporto**: Ubuntu 20.04+, Debian 11+, Arch, Fedora 34+
+**⭐ Se ti piace il progetto, metti un star su GitHub!**
