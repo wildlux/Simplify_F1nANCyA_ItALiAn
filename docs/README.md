@@ -75,6 +75,42 @@ Un assistente AI avanzato per Linux, progettato per offrire un'interfaccia intui
 
 ## 🚀 Uso
 
+### Guida per Principianti
+
+Se sei nuovo, segui questi passi per iniziare:
+
+1. **Avvia il Sistema**:
+   - Apri un terminale nella cartella del progetto.
+   - Esegui: `./start.sh`
+   - Attendi che si avviino backend (porta 5008) e frontend (porta 8080).
+
+2. **Accedi al Frontend**:
+   - Apri il browser e vai su `http://localhost:8080`.
+   - Nella schermata di login, usa la chiave demo: `demo_key_123` (o configura la tua in `.env`).
+
+3. **Prima Chat**:
+   - Nella barra in basso, scrivi: "Ciao, come stai?" e premi Invio.
+   - L'AI risponderà automaticamente in modalità "Auto".
+   - Cambia modalità (Auto/Matematica/Finanza) dal pulsante in alto.
+
+4. **Usa la Voce**:
+   - Abilita microfono nel browser (clicca sull'icona lucchetto nella barra URL).
+   - Clicca "Voce" accanto a "Invia" per registrare.
+   - Parla chiaramente; la trascrizione apparirà automaticamente.
+
+5. **Ascolta Risposte**:
+   - Dopo una risposta, clicca "Ascolta la tua voce!" per TTS.
+   - Assicurati che speech-dispatcher sia attivo (vedi installazione).
+
+6. **Prova Funzioni Avanzate**:
+   - **Grafici**: Scrivi "Crea un grafico di y=x^2" per visualizzazioni.
+   - **Codice**: Prova "print('Hello World')" per esecuzione sicura.
+   - **Notizie**: Clicca su "Economia" o "Sport" nella sidebar per feed RSS.
+
+7. **Personalizza**:
+   - Cambia modello AI dal menu a tendina (es. Llama 3.2).
+   - Esplora la sidebar per temi, esportazione chat e aiuto.
+
 ### Avvio Rapido
 ```bash
 ./start.sh
