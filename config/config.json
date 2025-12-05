@@ -1,0 +1,5 @@
+{
+    "version": "1.0",
+    "model": "llama3.2:3b",
+    "api_keys": ["demo_key_123", "admin_key_456"]
+}

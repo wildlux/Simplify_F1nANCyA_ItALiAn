@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🤖 Assistente AI Linux - Edizione Completa</title>
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-dark: #4338ca;
+            --secondary: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --info: #3b82f6;
+
+            --bg-dark: #0f172a;
+            --bg-darker: #020617;
+            --surface: #1e293b;
+            --surface-light: #334155;
+
+            --text: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+
+            --border: #475569;
+            --border-light: #64748b;
+
+            --radius: 12px;
+            --radius-sm: 8px;
+            --shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+            --shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', 'Ubuntu', 'Inter', sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, var(--bg-darker) 0%, var(--bg-dark) 100%);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Terminal Header */
+        .terminal-header {
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 3px solid var(--primary);
+            padding: 1.2rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: var(--shadow);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .logo-icon {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        /* Bottoni */
+        .btn {
+            background: var(--surface);
+            color: var(--text);
+            border: 2px solid var(--border);
+            padding: 0.7rem 1.4rem;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.7rem;
+            transition: all 0.3s ease;
+            font-size: 0.95rem;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow);
+            border-color: var(--primary);
+            background: var(--surface-light);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            border: none;
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, var(--secondary), #0d9668);
+            border: none;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, var(--danger), #dc2626);
+            border: none;
+        }
+
+        /* Status Bar */
+        .status-bar {
+            background: rgba(30, 41, 59, 0.8);
+            padding: 0.8rem 2rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            font-family: 'Monaco', 'Courier New', monospace;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 0.7rem;
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .status-online { background: var(--secondary); animation: blink 2s infinite; }
+        .status-offline { background: var(--danger); }
+        .status-connecting { background: var(--warning); }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Chat Container */
+        #chatContainer {
+            flex: 1;
+            overflow-y: auto;
+            padding: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .message {
+            margin-bottom: 1.8rem;
+            animation: slideIn 0.4s ease;
+            display: flex;
+            max-width: 85%;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            margin-left: auto;
+            flex-direction: row-reverse;
+        }
+
+        .message.ai {
+            margin-right: auto;
+        }
+
+        .bubble {
+            padding: 1.2rem 1.8rem;
+            border-radius: var(--radius);
+            position: relative;
+            max-width: 100%;
+            word-wrap: break-word;
+            line-height: 1.6;
+        }
+
+        .user .bubble {
+            background: linear-gradient(135deg, var(--primary), #6366f1);
+            color: white;
+            border-top-right-radius: 5px;
+            box-shadow: 0 5px 15px rgba(79, 70, 229, 0.3);
+        }
+
+        .ai .bubble {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-top-left-radius: 5px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .message-time {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 0.5rem;
+            display: block;
+        }
+
+        /* Input Area */
+        .input-area {
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(10px);
+            padding: 1.8rem 2rem;
+            border-top: 1px solid var(--border);
+            position: sticky;
+            bottom: 0;
+            z-index: 100;
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        #userInput {
+            flex: 1;
+            background: var(--surface);
+            border: 2px solid var(--border);
+            color: var(--text);
+            padding: 1rem 1.5rem;
+            border-radius: var(--radius);
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            min-height: 60px;
+            resize: none;
+            line-height: 1.5;
+        }
+
+        #userInput:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+        }
+
+        .quick-actions {
+            display: flex;
+            gap: 0.8rem;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .quick-btn {
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid var(--border-light);
+            color: var(--text-secondary);
+            padding: 0.6rem 1.2rem;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .quick-btn:hover {
+            background: var(--surface);
+            color: var(--text);
+            border-color: var(--primary);
+        }
+
+        /* Typing Indicator */
+        .typing-indicator {
+            display: flex;
+            gap: 0.5rem;
+            padding: 1rem;
+            align-items: center;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+
+        .typing-dots {
+            display: flex;
+            gap: 0.3rem;
+        }
+
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--primary);
+            border-radius: 50%;
+            animation: typingDot 1.4s infinite;
+        }
+
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typingDot {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
+        }
+
+        /* Math Expressions */
+        .math-expression {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 1rem;
+            border-radius: var(--radius-sm);
+            margin: 0.5rem 0;
+            border-left: 4px solid var(--primary);
+            font-family: 'Cambria Math', 'Times New Roman', serif;
+        }
+
+        /* Code Blocks */
+        pre {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 1rem;
+            border-radius: var(--radius-sm);
+            overflow-x: auto;
+            margin: 1rem 0;
+            border: 1px solid var(--border);
+        }
+
+        code {
+            font-family: 'Monaco', 'Courier New', monospace;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+
+        /* Login Modal */
+        .login-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(2, 6, 23, 0.95);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            backdrop-filter: blur(10px);
+        }
+
+        .login-box {
+            background: linear-gradient(145deg, var(--surface), var(--bg-dark));
+            padding: 3rem;
+            border-radius: var(--radius);
+            width: 90%;
+            max-width: 500px;
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border);
+        }
+
+        /* Notifications */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 1rem 1.5rem;
+            border-radius: var(--radius);
+            background: var(--surface);
+            border-left: 4px solid var(--primary);
+            box-shadow: var(--shadow);
+            z-index: 3000;
+            animation: slideInRight 0.3s ease;
+        }
+
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .terminal-header { flex-direction: column; gap: 1rem; padding: 1rem; }
+            .controls { justify-content: center; }
+            .status-bar { flex-direction: column; gap: 0.5rem; align-items: center; }
+            .message { max-width: 95%; }
+            .input-wrapper { flex-direction: column; }
+            #userInput { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Login Modal -->
+    <div id="loginModal" class="login-modal">
+        <div class="login-box">
+            <div style="text-align: center; margin-bottom: 2.5rem;">
+                <div class="logo-icon" style="margin: 0 auto 1.5rem; font-size: 2.5rem;">
+                    🤖
+                </div>
+                <h1 style="font-size: 2.2rem; margin-bottom: 0.5rem;">Assistente AI</h1>
+                <p style="color: var(--text-secondary); font-size: 1.1rem;">
+                    Linux Edition - Versione 4.0
+                </p>
+            </div>
+
+            <input type="password" id="apiKey"
+                   placeholder="Incolla la tua API Key qui..."
+                   style="width: 100%; padding: 1.2rem; margin-bottom: 1.5rem;
+                          background: var(--bg-dark); color: var(--text);
+                          border: 2px solid var(--border); border-radius: var(--radius-sm);
+                          font-size: 1rem;">
+
+            <div style="display: flex; gap: 1rem; margin-bottom: 2rem;">
+                <button onclick="login()" class="btn btn-primary" style="flex: 1; padding: 1rem;">
+                    <i class="fas fa-key"></i> Accedi
+                </button>
+                <button onclick="useDemoKey()" class="btn btn-success" style="flex: 1; padding: 1rem;">
+                    <i class="fas fa-play-circle"></i> Demo
+                </button>
+            </div>
+
+            <div style="background: rgba(79, 70, 229, 0.1); padding: 1.5rem;
+                       border-radius: var(--radius-sm); border-left: 4px solid var(--primary);">
+                <p style="margin: 0; font-size: 0.95rem; color: var(--text-secondary); line-height: 1.6;">
+                    <strong><i class="fas fa-info-circle"></i> API Keys disponibili:</strong><br>
+                    • <code style="background: rgba(0,0,0,0.3); padding: 0.3rem 0.7rem; border-radius: 4px;">demo_key_123</code> (Utente Demo)<br>
+                    • <code style="background: rgba(0,0,0,0.3); padding: 0.3rem 0.7rem; border-radius: 4px;">admin_key_456</code> (Amministratore)<br>
+                    • <code style="background: rgba(0,0,0,0.3); padding: 0.3rem 0.7rem; border-radius: 4px;">test_key_789</code> (Testing)
+                </p>
+            </div>
+
+            <p style="margin-top: 1.5rem; text-align: center; color: var(--text-muted); font-size: 0.9rem;">
+                <i class="fas fa-terminal"></i> Per assistenza: controlla la console (F12)
+            </p>
+        </div>
+    </div>
+
+    <!-- Main Interface -->
+    <div class="terminal-header">
+        <div class="logo">
+            <div class="logo-icon">
+                🤖
+            </div>
+            <div>
+                <div style="font-size: 1.4rem;">Assistente AI</div>
+                <div style="font-size: 0.9rem; color: var(--text-secondary);">
+                    <span id="currentMode">Modalità: Auto</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <select id="modeSelect" class="btn" onchange="changeMode(this.value)"
+                    style="background: var(--surface); border: 2px solid var(--border); padding: 0.7rem;">
+                <option value="auto"><i class="fas fa-robot"></i> Auto</option>
+                <option value="math"><i class="fas fa-calculator"></i> Matematica</option>
+                <option value="finance"><i class="fas fa-chart-line"></i> Finanza</option>
+            </select>
+
+            <button class="btn" onclick="toggleVoice()" id="voiceBtn">
+                <span id="voiceIcon"><i class="fas fa-microphone"></i></span>
+                <span id="voiceText">Voce</span>
+            </button>
+
+            <button class="btn" onclick="toggleTheme()" id="themeBtn">
+                <i class="fas fa-moon"></i> Tema
+            </button>
+
+            <button class="btn btn-primary" onclick="newChat()">
+                <i class="fas fa-plus"></i> Nuova
+            </button>
+        </div>
+    </div>
+
+    <div class="status-bar">
+        <div class="status-item">
+            <span class="status-indicator" id="connectionStatus"></span>
+            <span id="statusText">Connessione...</span>
+        </div>
+        <div class="status-item">
+            <span>Modello:</span>
+            <span id="modelStatus" style="color: var(--secondary);">llama3.2:3b</span>
+        </div>
+        <div class="status-item">
+            <span>Porta:</span>
+            <span>5000</span>
+        </div>
+        <div class="status-item">
+            <span>Utente:</span>
+            <span id="userStatus">Non connesso</span>
+        </div>
+    </div>
+
+    <!-- Chat Messages -->
+    <div id="chatContainer">
+        <!-- Messaggi appariranno qui -->
+    </div>
+
+    <!-- Input Area -->
+    <div class="input-area">
+        <div class="input-wrapper">
+            <textarea id="userInput"
+                      placeholder="Scrivi il tuo messaggio qui... (Ctrl+Enter per inviare, 🎤 per parlare)"
+                      rows="3"></textarea>
+            <button class="btn btn-primary" onclick="sendMessage()" style="padding: 1rem 2rem;">
+                <i class="fas fa-paper-plane"></i> Invia
+            </button>
+        </div>
+
+        <div class="quick-actions">
+            <button class="quick-btn" onclick="insertQuickText('Calcola l\\'area di un cerchio con raggio 5')">
+                <i class="fas fa-calculator"></i> Matematica
+            </button>
+            <button class="quick-btn" onclick="insertQuickText('Spiega il sistema fiscale italiano')">
+                <i class="fas fa-euro-sign"></i> Finanza
+            </button>
+            <button class="quick-btn" onclick="insertQuickText('Crea un grafico di y = sin(x)')">
+                <i class="fas fa-chart-bar"></i> Grafico
+            </button>
+            <button class="quick-btn" onclick="showHelp()">
+                <i class="fas fa-question-circle"></i> Aiuto
+            </button>
+            <button class="quick-btn" onclick="exportChat()">
+                <i class="fas fa-download"></i> Esporta
+            </button>
+            <button class="quick-btn" onclick="clearChat()">
+                <i class="fas fa-trash"></i> Pulisci
+            </button>
+        </div>
+    </div>
+    
+    <script>
+        // Configurazione
+        const API_URL = 'http://localhost:5000';
+        let apiKey = null;
+        let currentMode = 'auto';
+        let currentTheme = 'dark';
+        let isConnected = false;
+        let isListening = false;
+        let recognition = null;
+        let conversations = [];
+
+        // Elementi DOM
+        const chatContainer = document.getElementById('chatContainer');
+        const userInput = document.getElementById('userInput');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const statusText = document.getElementById('statusText');
+        const userStatus = document.getElementById('userStatus');
+        const modelStatus = document.getElementById('modelStatus');
+
+        // ==================== INIZIALIZZAZIONE ====================
+        window.onload = function() {
+            // Carica preferenze
+            loadPreferences();
+
+            // Auto-connect se c'è API key
+            if (apiKey) {
+                document.getElementById('loginModal').style.display = 'none';
+                connectToBackend();
+            }
+
+            // Setup event listeners
+            setupEventListeners();
+
+            // Focus input
+            userInput.focus();
+        };
+
+        function loadPreferences() {
+            const savedKey = localStorage.getItem('ai_api_key');
+            const savedTheme = localStorage.getItem('ai_theme') || 'dark';
+            const savedMode = localStorage.getItem('ai_mode') || 'auto';
+
+            if (savedKey) {
+                apiKey = savedKey;
+                userStatus.textContent = 'Demo User';
+            }
+
+            currentTheme = savedTheme;
+            currentMode = savedMode;
+            document.getElementById('modeSelect').value = savedMode;
+            updateCurrentMode(savedMode);
+
+            // Carica conversazioni
+            const savedConvs = localStorage.getItem('ai_conversations');
+            if (savedConvs) {
+                conversations = JSON.parse(savedConvs);
+            }
+        }
+
+        function setupEventListeners() {
+            // Invio messaggio con Ctrl+Enter
+            userInput.addEventListener('keydown', (e) => {
+                if (e.ctrlKey && e.key === 'Enter') {
+                    e.preventDefault();
+                    sendMessage();
+                }
+                if (e.key === 'Escape' && isListening) {
+                    stopVoiceRecognition();
+                }
+            });
+
+            // Scorrimento chat
+            chatContainer.addEventListener('scroll', () => {
+                // Potenziale caricamento messaggi precedenti
+            });
+        }
+
+        // ==================== CONNESSIONE BACKEND ====================
+        async function connectToBackend() {
+            updateConnectionStatus('connecting', 'Connessione in corso...');
+
+            try {
+                const response = await fetch(`${API_URL}/api/health`);
+                if (response.ok) {
+                    const data = await response.json();
+
+                    isConnected = true;
+                    updateConnectionStatus('online', 'Connesso');
+                    modelStatus.textContent = data.system?.model || 'llama3.2:3b';
+
+                    // Benvenuto
+                    setTimeout(() => {
+                        if (chatContainer.children.length === 0) {
+                            showWelcomeMessage();
+                        }
+                    }, 500);
+
+                } else {
+                    updateConnectionStatus('offline', 'Backend non raggiungibile');
+                }
+            } catch (error) {
+                updateConnectionStatus('offline', 'Errore di connessione');
+                console.error('Connection error:', error);
+
+                // Retry dopo 5 secondi
+                setTimeout(connectToBackend, 5000);
+            }
+        }
+
+        function updateConnectionStatus(status, message) {
+            connectionStatus.className = 'status-indicator';
+
+            switch(status) {
+                case 'online':
+                    connectionStatus.classList.add('status-online');
+                    break;
+                case 'offline':
+                    connectionStatus.classList.add('status-offline');
+                    break;
+                case 'connecting':
+                    connectionStatus.classList.add('status-connecting');
+                    break;
+            }
+
+            statusText.textContent = message;
+        }
+
+        // ==================== GESTIONE CHAT ====================
+        function showWelcomeMessage() {
+            addMessage('ai', `
+                <div style="margin-bottom: 1rem;">
+                    <h3 style="color: var(--primary); margin-bottom: 0.5rem;">
+                        <i class="fas fa-robot"></i> Benvenuto in Assistente AI!
+                    </h3>
+                    <p>Sono il tuo assistente virtuale specializzato in <strong>matematica</strong> e <strong>finanza</strong>.</p>
+                </div>
+
+                <div style="background: rgba(79, 70, 229, 0.1); padding: 1rem; border-radius: 8px; margin: 1rem 0;">
+                    <h4><i class="fas fa-lightbulb"></i> Cosa posso fare:</h4>
+                    <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+                        <li><strong>Calcoli matematici</strong> complessi e spiegazioni</li>
+                        <li><strong>Consulenza finanziaria</strong> e fiscale</li>
+                        <li><strong>Grafici</strong> e visualizzazioni dati</li>
+                        <li><strong>Analisi</strong> e risposte dettagliate</li>
+                        <li><strong>Input vocale</strong> (clicca 🎤 per parlare)</li>
+                    </ul>
+                </div>
+
+                <div style="margin-top: 1.5rem;">
+                    <h4><i class="fas fa-bolt"></i> Prova queste domande:</h4>
+                    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
+                        <button class="quick-btn" onclick="insertQuickText('Calcola 2+2*3')">Calcolo base</button>
+                        <button class="quick-btn" onclick="insertQuickText('Spiega le tasse in Italia')">Fisco</button>
+                        <button class="quick-btn" onclick="insertQuickText('Disegna il grafico di y=x^2')">Grafico</button>
+                        <button class="quick-btn" onclick="insertQuickText('Analizza questo investimento')">Investimenti</button>
+                    </div>
+                </div>
+
+                <p style="margin-top: 1.5rem; font-size: 0.9rem; color: var(--text-secondary);">
+                    <i class="fas fa-info-circle"></i> Usa i pulsanti rapidi o scrivi direttamente!
+                </p>
+            `);
+        }
+
+        function addMessage(sender, content, showTime = true) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}`;
+
+            const timeStr = showTime ? new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '';
+
+            messageDiv.innerHTML = `
+                <div class="bubble">
+                    ${content}
+                    ${showTime ? `<span class="message-time">${timeStr}</span>` : ''}
+                </div>
+            `;
+
+            chatContainer.appendChild(messageDiv);
+            scrollToBottom();
+        }
+
+        function showTypingIndicator() {
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'message ai';
+            typingDiv.id = 'typingIndicator';
+            typingDiv.innerHTML = `
+                <div class="bubble">
+                    <div class="typing-indicator">
+                        <div class="typing-dots">
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                        </div>
+                        <span>Assistente sta scrivendo...</span>
+                    </div>
+                </div>
+            `;
+
+            chatContainer.appendChild(typingDiv);
+            scrollToBottom();
+        }
+
+        function hideTypingIndicator() {
+            const indicator = document.getElementById('typingIndicator');
+            if (indicator) {
+                indicator.remove();
+            }
+        }
+
+        async function sendMessage() {
+            const text = userInput.value.trim();
+            if (!text || !apiKey || !isConnected) {
+                showNotification('Non sei connesso al backend', 'error');
+                return;
+            }
+
+            // Aggiungi messaggio utente
+            addMessage('user', escapeHtml(text));
+            userInput.value = '';
+
+            // Mostra indicatore typing
+            showTypingIndicator();
+
+            try {
+                const response = await fetch(`${API_URL}/api/chat/stream`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'api-key': apiKey
+                    },
+                    body: JSON.stringify({
+                        text: text,
+                        mode: currentMode,
+                        stream: true
+                    })
+                });
+
+                hideTypingIndicator();
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                // Crea contenitore per la risposta streaming
+                const responseDiv = document.createElement('div');
+                responseDiv.className = 'message ai';
+                responseDiv.innerHTML = '<div class="bubble" id="streamingBubble"></div>';
+                chatContainer.appendChild(responseDiv);
+
+                const bubble = document.getElementById('streamingBubble');
+                let fullResponse = '';
+
+                // Leggi stream
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder('utf-8');
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.substring(6);
+
+                            if (data === '[DONE]') {
+                                // Salva conversazione
+                                saveConversation(text, fullResponse);
+                                break;
+                            }
+
+                            try {
+                                const parsed = JSON.parse(data);
+                                if (parsed.chunk) {
+                                    fullResponse += parsed.chunk;
+                                    bubble.innerHTML = formatResponse(fullResponse) +
+                                        `<span class="message-time">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>`;
+                                }
+                            } catch (e) {
+                                console.error('Parse error:', e);
+                            }
+                        }
+                    }
+
+                    scrollToBottom();
+                }
+
+            } catch (error) {
+                hideTypingIndicator();
+                addMessage('ai', `
+                    <div style="color: var(--danger);">
+                        <i class="fas fa-exclamation-triangle"></i> <strong>Errore:</strong> ${escapeHtml(error.message)}
+                    </div>
+                    <p style="margin-top: 0.5rem;">Verifica che Ollama sia in esecuzione:</p>
+                    <pre style="margin: 0.5rem 0;"><code>ollama serve</code></pre>
+                `);
+                console.error('Chat error:', error);
+            }
+        }
+
+        // ==================== FORMATTAZIONE RISPOSTE ====================
+        function formatResponse(text) {
+            // Escape HTML
+            let formatted = escapeHtml(text);
+
+            // Markdown semplice
+            formatted = formatted
+                .replace(/\\*\\*\\*([^*]+)\\*\\*\\*/g, '<strong><em>$1</em></strong>')
+                .replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>')
+                .replace(/\\*([^*]+)\\*/g, '<em>$1</em>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/```([\\s\\S]*?)```/g, '<pre><code>$1</code></pre>')
+                .replace(/\\n/g, '<br>');
+
+            // Rileva e formatta espressioni matematiche
+            formatted = formatted.replace(/\\$\\$([^$]+)\\$\\$/g, (match, expr) => {
+                return `<div class="math-expression">${expr}</div>`;
+            });
+
+            return formatted;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ==================== INPUT VOCALE ====================
+        function toggleVoice() {
+            if (!isListening) {
+                startVoiceRecognition();
+            } else {
+                stopVoiceRecognition();
+            }
+        }
+
+        function startVoiceRecognition() {
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                showNotification('Riconoscimento vocale non supportato nel tuo browser', 'error');
+                return;
+            }
+
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+
+            recognition.lang = 'it-IT';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+
+            recognition.onstart = () => {
+                isListening = true;
+                document.getElementById('voiceIcon').innerHTML = '<i class="fas fa-microphone-slash"></i>';
+                document.getElementById('voiceText').textContent = 'Ascoltando...';
+                showNotification('🎤 Ascoltando... parla ora', 'info');
+            };
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                userInput.value = transcript;
+                showNotification(`📝 Trascritto: "${transcript}"`, 'success');
+
+                // Auto-invia dopo 1 secondo
+                setTimeout(() => {
+                    sendMessage();
+                }, 1000);
+            };
+
+            recognition.onerror = (event) => {
+                console.error('Voice recognition error:', event.error);
+                showNotification(`Errore riconoscimento vocale: ${event.error}`, 'error');
+                stopVoiceRecognition();
+            };
+
+            recognition.onend = () => {
+                stopVoiceRecognition();
+            };
+
+            recognition.start();
+        }
+
+        function stopVoiceRecognition() {
+            if (recognition) {
+                recognition.stop();
+            }
+            isListening = false;
+            document.getElementById('voiceIcon').innerHTML = '<i class="fas fa-microphone"></i>';
+            document.getElementById('voiceText').textContent = 'Voce';
+        }
+
+        // ==================== UTILITIES ====================
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+
+            let icon = 'ℹ️';
+            if (type === 'success') icon = '✅';
+            if (type === 'error') icon = '❌';
+            if (type === 'warning') icon = '⚠️';
+
+            notification.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 0.8rem;">
+                    <span style="font-size: 1.2rem;">${icon}</span>
+                    <span>${message}</span>
+                </div>
+            `;
+
+            document.body.appendChild(notification);
+
+            // Rimuovi dopo 5 secondi
+            setTimeout(() => {
+                notification.style.animation = 'slideInRight 0.3s ease reverse';
+                setTimeout(() => notification.remove(), 300);
+            }, 5000);
+        }
+
+        function scrollToBottom() {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function changeMode(mode) {
+            currentMode = mode;
+            localStorage.setItem('ai_mode', mode);
+            updateCurrentMode(mode);
+            showNotification(`Modalità cambiata: ${mode}`, 'success');
+        }
+
+        function updateCurrentMode(mode) {
+            const modeNames = {
+                'auto': 'Auto',
+                'math': 'Matematica',
+                'finance': 'Finanza'
+            };
+            document.getElementById('currentMode').textContent = `Modalità: ${modeNames[mode]}`;
+        }
+
+        function insertQuickText(text) {
+            userInput.value = text;
+            userInput.focus();
+        }
+
+        function newChat() {
+            if (chatContainer.children.length > 0) {
+                if (confirm('Vuoi iniziare una nuova conversazione? La conversazione corrente sarà persa.')) {
+                    chatContainer.innerHTML = '';
+                    showNotification('Nuova conversazione iniziata', 'success');
+                    showWelcomeMessage();
+                }
+            }
+        }
+
+        function clearChat() {
+            if (confirm('Pulire tutta la conversazione?')) {
+                chatContainer.innerHTML = '';
+                showNotification('Chat pulita', 'success');
+            }
+        }
+
+        function exportChat() {
+            const messages = document.querySelectorAll('.message');
+            let exportText = '=== Conversazione Assistente AI ===\\n\\n';
+
+            messages.forEach(msg => {
+                const isUser = msg.classList.contains('user');
+                const content = msg.querySelector('.bubble').textContent;
+                exportText += isUser ? '[TU]: ' : '[AI]: ';
+                exportText += content + '\\n\\n';
+            });
+
+            const blob = new Blob([exportText], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `conversazione-ai-${new Date().toISOString().slice(0,10)}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            showNotification('Conversazione esportata!', 'success');
+        }
+
+        function saveConversation(userMsg, aiMsg) {
+            const conversation = {
+                id: 'conv_' + Date.now(),
+                timestamp: new Date().toISOString(),
+                user: userMsg,
+                ai: aiMsg,
+                mode: currentMode
+            };
+
+            conversations.unshift(conversation);
+            if (conversations.length > 50) {
+                conversations = conversations.slice(0, 50);
+            }
+
+            localStorage.setItem('ai_conversations', JSON.stringify(conversations));
+        }
+
+        function toggleTheme() {
+            const themes = ['dark', 'light', 'neon', 'hacker'];
+            const currentIndex = themes.indexOf(currentTheme);
+            const nextIndex = (currentIndex + 1) % themes.length;
+            currentTheme = themes[nextIndex];
+
+            localStorage.setItem('ai_theme', currentTheme);
+
+            // Applica tema (semplice)
+            document.body.className = `theme-${currentTheme}`;
+            showNotification(`Tema cambiato: ${currentTheme}`, 'info');
+        }
+
+        function showHelp() {
+            addMessage('ai', `
+                <h3><i class="fas fa-question-circle"></i> Guida Assistente AI</h3>
+
+                <div style="margin: 1rem 0;">
+                    <h4>Modalità:</h4>
+                    <ul>
+                        <li><strong>Auto</strong>: Rileva automaticamente matematica/finanza</li>
+                        <li><strong>Matematica</strong>: Calcoli, equazioni, grafici</li>
+                        <li><strong>Finanza</strong>: Tasse, investimenti, analisi</li>
+                    </ul>
+                </div>
+
+                <div style="margin: 1rem 0;">
+                    <h4>Comandi rapidi:</h4>
+                    <ul>
+                        <li><strong>Ctrl+Enter</strong>: Invia messaggio</li>
+                        <li><strong>🎤</strong>: Input vocale</li>
+                        <li><strong>Esc</strong>: Interrompi ascolto</li>
+                    </ul>
+                </div>
+
+                <div style="background: rgba(59, 130, 246, 0.1); padding: 1rem; border-radius: 8px;">
+                    <h4><i class="fas fa-terminal"></i> Supporto tecnico:</h4>
+                    <p>Per problemi:</p>
+                    <pre style="margin: 0.5rem 0;"><code># Verifica Ollama
+ollama serve
+
+# Verifica backend
+curl http://localhost:5000/api/health
+
+# Logs
+tail -f logs/*.log</code></pre>
+                </div>
+            `);
+        }
+
+        // ==================== LOGIN ====================
+        function login() {
+            const key = document.getElementById('apiKey').value.trim();
+            if (key) {
+                apiKey = key;
+                localStorage.setItem('ai_api_key', key);
+                document.getElementById('loginModal').style.display = 'none';
+                userStatus.textContent = 'Connesso';
+                connectToBackend();
+                showNotification('Accesso effettuato!', 'success');
+            } else {
+                showNotification('Inserisci una API Key', 'error');
+            }
+        }
+
+        function useDemoKey() {
+            document.getElementById('apiKey').value = 'demo_key_123';
+            login();
+        }
+
+        function logout() {
+            apiKey = null;
+            localStorage.removeItem('ai_api_key');
+            document.getElementById('loginModal').style.display = 'flex';
+            userStatus.textContent = 'Non connesso';
+            showNotification('Logout effettuato', 'info');
+        }
+
+        // Hotkey globale per logout (Ctrl+L)
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'l') {
+                e.preventDefault();
+                logout();
+            }
+        });
+    </script>
+        
+        async function sendMessage() {
+            const input = document.getElementById('userInput');
+            const text = input.value.trim();
+            if (!text) return;
+            
+            addMessage(text, true);
+            input.value = '';
+            
+            const mode = document.getElementById('mode').value;
+            
+            try {
+                const response = await fetch('http://localhost:5000/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'api-key': apiKey
+                    },
+                    body: JSON.stringify({ text, mode, stream: true })
+                });
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let aiMessage = '';
+                const aiMsgDiv = document.createElement('div');
+                aiMsgDiv.className = 'message ai';
+                aiMsgDiv.innerHTML = '<div class="bubble" id="streamingMsg"></div>';
+                document.getElementById('chat').appendChild(aiMsgDiv);
+                const bubble = document.getElementById('streamingMsg');
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.substring(6);
+                            if (data === '[DONE]') break;
+                            try {
+                                const parsed = JSON.parse(data);
+                                if (parsed.chunk) {
+                                    aiMessage += parsed.chunk;
+                                    bubble.textContent = aiMessage;
+                                }
+                            } catch (e) {}
+                        }
+                    }
+                    document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
+                }
+            } catch (error) {
+                addMessage('Errore: ' + error.message, false);
+            }
+        }
+        
+        function toggleVoice() {
+            if (!('webkitSpeechRecognition' in window)) {
+                alert('Riconoscimento vocale non supportato');
+                return;
+            }
+            const recognition = new webkitSpeechRecognition();
+            recognition.lang = 'it-IT';
+            recognition.onresult = (event) => {
+                document.getElementById('userInput').value = event.results[0][0].transcript;
+                sendMessage();
+            };
+            recognition.start();
+        }
+    </script>
+</body>
+</html>
