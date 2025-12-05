@@ -7,10 +7,11 @@
 
     <!-- CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
     <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r161/three.min.js"></script>
+     <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
@@ -87,17 +88,6 @@
         </div>
 
         <div class="controls">
-             <select id="modeSelect" class="btn" onchange="changeMode(this.value)"
-                     style="background: var(--surface); border: 2px solid var(--border); padding: 0.7rem;">
-                 <option value="auto"><i class="fas fa-robot"></i> Auto</option>
-                 <option value="math"><i class="fas fa-calculator"></i> Matematica</option>
-                 <option value="finance"><i class="fas fa-chart-line"></i> Finanza</option>
-             </select>
-
-             <select id="modelSelect" class="btn" onchange="changeModel(this.value)" onclick="loadModels()"
-                     style="background: var(--surface); border: 2px solid var(--border); padding: 0.7rem;">
-                 <option value="llama3.2:3b">llama3.2:3b (consigliato)</option>
-             </select>
 
             <button class="btn" onclick="toggleVoice()" id="voiceBtn">
                 <span id="voiceIcon"><i class="fas fa-microphone"></i></span>
@@ -112,16 +102,9 @@
                 <i class="fas fa-moon"></i> Tema
             </button>
 
-             <div class="menu-container">
-                 <button class="btn" onclick="toggleMenu()" id="menuBtn">
-                     <i class="fas fa-bars"></i> Menu
-                 </button>
-                 <div id="menuDropdown" class="dropdown-menu">
-                     <button onclick="showSettings()"><i class="fas fa-cog"></i> Impostazioni Prompt</button>
-                     <button onclick="toggleTheme()"><i class="fas fa-palette"></i> Cambia Tema</button>
-                     <button onclick="showHelp()"><i class="fas fa-question-circle"></i> Aiuto</button>
-                 </div>
-             </div>
+             <button class="btn" onclick="toggleSidebar()" id="menuBtn">
+                 <i class="fas fa-bars"></i> Menu
+             </button>
 
              <button class="btn btn-primary" onclick="newChat()">
                  <i class="fas fa-plus"></i> Nuova
@@ -169,29 +152,23 @@
         </div>
 
         <div class="quick-actions">
-            <button class="quick-btn" onclick="insertQuickText('Calcola l\\'area di un cerchio con raggio 5')">
+            <button class="quick-btn" onclick='insertQuickText("Risolvi l\'equazione di secondo grado: x² + 5x + 6 = 0")'>
                 <i class="fas fa-calculator"></i> Matematica
             </button>
-            <button class="quick-btn" onclick="insertQuickText('Spiega il sistema fiscale italiano')">
+            <button class="quick-btn" onclick='insertQuickText("Spiega il sistema fiscale italiano")'>
                 <i class="fas fa-euro-sign"></i> Finanza
             </button>
-             <button class="quick-btn" onclick="insertQuickText('Crea un grafico di y = sin(x)')">
-                 <i class="fas fa-chart-bar"></i> Grafico
-             </button>
-             <button class="quick-btn" onclick="insertQuickText('Crea un grafico 3D di una sinusoide parametrica: x=cos(t), y=sin(t), z=t')">
-                 <i class="fas fa-cube"></i> Sinusoide 3D
-             </button>
-             <button class="quick-btn" onclick="showHelp()">
-                <i class="fas fa-question-circle"></i> Aiuto
+            <button class="quick-btn" onclick='insertQuickText("Crea un grafico di y=x^2")'>
+                <i class="fas fa-chart-bar"></i> Grafico
             </button>
-            <button class="quick-btn" onclick="exportChat()">
-                <i class="fas fa-download"></i> Esporta
+            <button class="quick-btn" onclick='insertQuickText("Crea un grafico 3D parametrico di x=cos(t), y=sin(t), z=t")'>
+                <i class="fas fa-cube"></i> Sinusoide 3D
             </button>
             <button class="quick-btn" onclick="clearChat()">
                 <i class="fas fa-trash"></i> Pulisci
             </button>
             <button class="quick-btn" onclick="toggleSpeech()" id="speechToggleBtn">
-                <i class="fas fa-volume-up"></i> Leggi
+                <i class="fas fa-volume-mute"></i> Muto
             </button>
             <button class="quick-btn" onclick="testSpeech()">
                 <i class="fas fa-play-circle"></i> Test Voce
@@ -199,11 +176,71 @@
             <button class="quick-btn" onclick="showChartMenu()">
                 <i class="fas fa-chart-bar"></i> Grafici
             </button>
-            <button class="quick-btn" onclick="logout()" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border-color: #ef4444;">
-                <i class="fas fa-sign-out-alt"></i> Logout
+            <button class="quick-btn" onclick="showHelp()">
+                <i class="fas fa-question-circle"></i> Aiuto
+            </button>
+            <button class="quick-btn" onclick="exportChat()">
+                <i class="fas fa-download"></i> Esporta
             </button>
         </div>
     </div>
+
+    <!-- Sidebar -->
+    <div id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+            <h3><i class="fas fa-robot"></i> Assistente AI</h3>
+            <button onclick="toggleSidebar()" class="sidebar-close">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="sidebar-content">
+            <div class="sidebar-section">
+                <h4><i class="fas fa-brain"></i> Modalità</h4>
+                <select id="modeSelect" class="sidebar-select" onchange="changeMode(this.value)">
+                    <option value="auto">🤖 Auto</option>
+                    <option value="math">🐍 Esempio di Python</option>
+                    <option value="finance">💰 Finanza</option>
+                </select>
+            </div>
+
+            <div class="sidebar-section">
+                <h4><i class="fas fa-server"></i> Modello AI</h4>
+                <select id="modelSelect" class="sidebar-select" onchange="changeModel(this.value)" onclick="loadModels()">
+                    <option value="llama3.2:3b">llama3.2:3b ⭐</option>
+                </select>
+            </div>
+
+            <div class="sidebar-section">
+                <h4><i class="fas fa-tools"></i> Azioni</h4>
+                <button onclick="newChat(); toggleSidebar()" class="sidebar-item">
+                    <i class="fas fa-plus"></i> Nuova Conversazione
+                </button>
+                <button onclick="exportChat(); toggleSidebar()" class="sidebar-item">
+                    <i class="fas fa-download"></i> Esporta Chat
+                </button>
+            </div>
+
+            <div class="sidebar-section">
+                <h4><i class="fas fa-cog"></i> Impostazioni</h4>
+                <button onclick="showSettings(); toggleSidebar()" class="sidebar-item">
+                    <i class="fas fa-edit"></i> Prompt Personalizzati
+                </button>
+                <button onclick="toggleTheme(); toggleSidebar()" class="sidebar-item">
+                    <i class="fas fa-palette"></i> Cambia Tema
+                </button>
+            </div>
+
+            <div class="sidebar-section">
+                <h4><i class="fas fa-user"></i> Account</h4>
+                <button onclick="logout()" class="sidebar-item logout">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Overlay for sidebar -->
+    <div id="sidebarOverlay" class="sidebar-overlay" onclick="toggleSidebar()"></div>
 
     <!-- Settings Modal -->
     <div id="settingsModal" class="modal">
@@ -216,7 +253,7 @@
             </div>
 
             <div style="margin-bottom: 1rem;">
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: bold;">Matematica:</label>
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: bold;">Esempio di Python:</label>
                 <textarea id="mathPrompt" rows="3" style="width: 100%; padding: 0.5rem; background: var(--bg-dark); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius);"></textarea>
             </div>
 
@@ -232,6 +269,6 @@
         </div>
     </div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=2"></script>
 </body>
 </html>

@@ -70,19 +70,39 @@ def generate_3d_surface_data(func_str="x**2 + y**2", x_range=(-5, 5), y_range=(-
         return {"error": f"Errore nella generazione della superficie: {str(e)}"}
 
 def generate_3d_scatter_data(points=100, x_range=(-10, 10), y_range=(-10, 10), z_range=(-10, 10)):
-    """Genera dati per uno scatter plot 3D"""
-    x = np.random.uniform(x_range[0], x_range[1], points)
-    y = np.random.uniform(y_range[0], y_range[1], points)
-    z = np.random.uniform(z_range[0], z_range[1], points)
+    """Genera dati per uno scatter plot 3D con dati fissi per esempi"""
+    # Usa dati fissi invece di random per esempi più prevedibili
+    fixed_points = [
+        (-5, -5, -5), (-3, -3, -3), (-1, -1, -1), (1, 1, 1), (3, 3, 3), (5, 5, 5),
+        (-4, 2, 1), (-2, 4, -2), (0, 0, 0), (2, -4, 3), (4, -2, -1),
+        (-3, 1, 4), (-1, 3, -3), (1, -3, 2), (3, -1, -4), (5, 5, 5)
+    ]
+
+    if points <= len(fixed_points):
+        selected = fixed_points[:points]
+    else:
+        # Se servono più punti, aggiungi alcuni random
+        selected = fixed_points[:]
+        remaining = points - len(fixed_points)
+        x_extra = np.random.uniform(x_range[0], x_range[1], remaining)
+        y_extra = np.random.uniform(y_range[0], y_range[1], remaining)
+        z_extra = np.random.uniform(z_range[0], z_range[1], remaining)
+        for i in range(remaining):
+            selected.append((x_extra[i], y_extra[i], z_extra[i]))
+
+    x = [p[0] for p in selected]
+    y = [p[1] for p in selected]
+    z = [p[2] for p in selected]
 
     # Colori basati sulla coordinata Z
-    colors = (z - z.min()) / (z.max() - z.min()) * 255
+    z_array = np.array(z)
+    colors = (z_array - z_array.min()) / (z_array.max() - z_array.min()) * 255
 
     return {
         "type": "scatter3d",
-        "x": x.tolist(),
-        "y": y.tolist(),
-        "z": z.tolist(),
+        "x": x,
+        "y": y,
+        "z": z,
         "colors": colors.tolist(),
         "title": f"Scatter 3D ({points} punti)"
     }
@@ -233,51 +253,59 @@ class AIHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_POST(self):
-        if self.path == "/api/chat":
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            data = json.loads(post_data.decode())
+        try:
+            if self.path == "/api/chat":
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                data = json.loads(post_data.decode())
 
-            text = data.get("text", "")
-            mode = data.get("mode", "auto")
-            model = data.get("model", MODEL)
-            custom_prompts = data.get("prompts", SYSTEM_PROMPTS)
+                text = data.get("text", "")
+                mode = data.get("mode", "auto")
+                model = data.get("model", MODEL)
+                custom_prompts = data.get("prompts", SYSTEM_PROMPTS)
 
-            if mode == "auto":
-                mode = detect_mode(text)
+                if mode == "auto":
+                    mode = detect_mode(text)
 
-            system_prompt = custom_prompts.get(mode, custom_prompts["general"])
-            full_prompt = f"{system_prompt}\n\n{text}\n\nRisposta:"
+                system_prompt = custom_prompts.get(mode, custom_prompts["general"])
+                full_prompt = f"{system_prompt}\n\n{text}\n\nRisposta:"
 
-            response_text = call_ollama(full_prompt, model)
+                response_text = call_ollama(full_prompt, model)
 
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.send_cors_headers()
-            self.end_headers()
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_cors_headers()
+                self.end_headers()
 
-            response = {"response": response_text, "mode": mode}
-            self.wfile.write(json.dumps(response).encode())
+                response = {"response": response_text, "mode": mode}
+                self.wfile.write(json.dumps(response).encode())
 
-        elif self.path == "/api/chart3d":
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            data = json.loads(post_data.decode())
+            elif self.path == "/api/chart3d":
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                data = json.loads(post_data.decode())
 
-            chart_type = data.get("type", "surface")
-            params = data.get("params", {})
+                chart_type = data.get("type", "surface")
+                params = data.get("params", {})
 
-            chart_data = create_3d_chart_response(chart_type, params)
+                chart_data = create_3d_chart_response(chart_type, params)
 
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.send_cors_headers()
-            self.end_headers()
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_cors_headers()
+                self.end_headers()
 
-            self.wfile.write(json.dumps(chart_data).encode())
+                self.wfile.write(json.dumps(chart_data).encode())
 
-        else:
-            self.send_response(404)
+            else:
+                self.send_response(404)
+                self.send_cors_headers()
+                self.end_headers()
+        except Exception as e:
+            print(f"Error in do_POST: {e}")
+            import traceback
+            traceback.print_exc()
+            self.send_response(500)
             self.send_cors_headers()
             self.end_headers()
 
@@ -288,8 +316,8 @@ class AIHandler(http.server.BaseHTTPRequestHandler):
 
 def run_server():
     try:
-        with socketserver.TCPServer(("127.0.0.1", 5003), AIHandler) as httpd:
-            print("🚀 Assistente AI Backend avviato su porta 5003")
+        with socketserver.ThreadingTCPServer(("0.0.0.0", 5005), AIHandler) as httpd:
+            print("🚀 Assistente AI Backend avviato su porta 5005")
             print("🌐 Frontend: http://localhost:8080")
             httpd.serve_forever()
     except Exception as e:
