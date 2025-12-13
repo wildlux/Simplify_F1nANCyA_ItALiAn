@@ -69,10 +69,22 @@ def send_response(start_response, status, headers, body):
 
 def application(environ, start_response):
     """Applicazione WSGI principale"""
-    
+
+    method = environ.get('REQUEST_METHOD', 'GET')
+
+    # Gestisci richieste OPTIONS per CORS
+    if method == 'OPTIONS':
+        status = '200 OK'
+        headers = [
+            ('Access-Control-Allow-Origin', '*'),
+            ('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'),
+            ('Access-Control-Allow-Headers', 'Content-Type, X-API-Key, Authorization'),
+        ]
+        return send_response(start_response, status, headers, '')
+
     # Estrai API key
     api_key = extract_api_key(environ)
-    
+
     # Verifica API key
     if not api_key:
         response = {"error": "API Key richiesta", "valid_keys": list(VALID_API_KEYS.keys())}

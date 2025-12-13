@@ -23,7 +23,11 @@ let prompts = {
 
 async function loadModels() {
     try {
-        const response = await fetch(`${API_URL}/api/models`);
+        const response = await fetch(`${API_URL}/api/models`, {
+            headers: {
+                'X-API-Key': apiKey
+            }
+        });
         const data = await response.json();
         const select = document.getElementById('modelSelect');
         const currentValue = select.value; // Preserve current selection
