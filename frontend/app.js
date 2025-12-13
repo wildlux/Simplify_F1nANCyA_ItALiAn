@@ -1,8 +1,25 @@
 // Assistente AI - Frontend JavaScript
 // Versione: 4.0
 
+const API_URL = 'http://localhost:54324';
+=======
 // ==================== CONFIGURAZIONE ====================
-const API_URL = 'http://localhost:5008';
+// Per accesso da cellulare, usa l'IP del computer invece di localhost
+// const API_URL = 'http://localhost:54324';
+const API_URL = 'http://192.168.1.165:54324';
+
+// Rileva se è un dispositivo mobile
+const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+const isAndroid = /Android/i.test(navigator.userAgent);
+
+// Ottimizzazioni per Android
+const API_URL = 'http://localhost:54324';
+=======
+if (isAndroid) {
+    console.log('📱 Dispositivo Android rilevato - applico ottimizzazioni');
+}====================
+const API_URL = 'http://localhost:54324';====================
+const API_URL = 'http://localhost:54324';
 let apiKey = null;
 let currentMode = 'auto';
 let currentTheme = 'dark';
@@ -158,7 +175,24 @@ function setupEventListeners() {
     });
 }
 
+async function connectToBackend() {
+=======
+// ==================== LEGGI API KEY DALL'URL ====================
+function getApiKeyFromUrl() {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('api_key');
+}
+
+// Leggi API key dall'URL all'avvio
+const urlApiKey = getApiKeyFromUrl();
+if (urlApiKey) {
+    apiKey = urlApiKey;
+    localStorage.setItem('ai_api_key', urlApiKey);
+    console.log('🔑 API Key trovata nell\'URL:', urlApiKey);
+}
+
 // ==================== CONNESSIONE BACKEND ====================
+async function connectToBackend() {====================
 async function connectToBackend() {
     updateConnectionStatus('connecting', 'Connessione in corso...');
 

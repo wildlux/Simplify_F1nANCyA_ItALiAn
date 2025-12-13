@@ -10,6 +10,23 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
      <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
     <link rel="stylesheet" href="style.css">
+    <style>
+        /* Stili per l'indicatore di stato del server */
+        .server-online {
+            color: #10b981 !important;
+        }
+        .server-offline {
+            color: #ef4444 !important;
+        }
+        .server-checking {
+            color: #f59e0b !important;
+        }
+        /* Stili per le istruzioni Android */
+        #androidInstructions {
+            background: rgba(255, 193, 7, 0.1) !important;
+            border-left: 4px solid #fbbf24 !important;
+        }
+    </style>
      <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
      <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.27.0/plotly.min.js"></script>
      <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r161/three.min.js"></script>
@@ -59,6 +76,15 @@
                 </button>
             </div>
 
+            <!-- Indicatore stato server -->
+            <div id="serverStatus" style="background: rgba(79, 70, 229, 0.1); padding: 1rem;
+                       border-radius: var(--radius-sm); border-left: 4px solid var(--primary); margin-bottom: 1rem;">
+                <p style="margin: 0; font-size: 0.95rem; color: var(--text-secondary);">
+                    <strong><i class="fas fa-server"></i> Stato server:</strong>
+                    <span id="serverStatusText" style="color: var(--text); font-weight: bold;">Verifica in corso...</span>
+                </p>
+            </div>
+
             <div style="background: rgba(79, 70, 229, 0.1); padding: 1.5rem;
                        border-radius: var(--radius-sm); border-left: 4px solid var(--primary);">
                 <p style="margin: 0; font-size: 0.95rem; color: var(--text-secondary); line-height: 1.6;">
@@ -72,6 +98,16 @@
             <p style="margin-top: 1.5rem; text-align: center; color: var(--text-muted); font-size: 0.9rem;">
                 <i class="fas fa-terminal"></i> Per assistenza: controlla la console (F12)
             </p>
+            <!-- Istruzioni specifiche per Android -->
+            <div id="androidInstructions" style="display: none; margin-top: 1rem; padding: 1rem; background: rgba(255, 193, 7, 0.1); border-radius: var(--radius-sm); border-left: 4px solid #fbbf24;">
+                <p style="margin: 0; font-size: 0.9rem; color: var(--text);">
+                    <strong><i class="fas fa-android"></i> Utente Android?</strong><br>
+                    • Usa <strong>Chrome</strong> (non il browser predefinito)
+                    • Assicurati che computer e cellulare siano sulla <strong>stessa rete WiFi</strong>
+                    • Se non funziona, crea un hotspot dal cellulare e connetti il computer
+                    • <a href="test_connection.html" style="color: #fbbf24; text-decoration: underline;" target="_blank">Testa la connessione</a>
+                </p>
+            </div>
         </div>
     </div>
 
@@ -205,6 +241,9 @@
               </button>
             <button class="quick-btn always-visible" onclick="showHelp()">
                 <i class="fas fa-question-circle"></i> Aiuto
+            </button>
+            <button class="quick-btn" onclick="window.open('test_connection.html', '_blank')" id="testConnectionBtn">
+                <i class="fas fa-wifi"></i> Test Connessione
             </button>
 
         </div>

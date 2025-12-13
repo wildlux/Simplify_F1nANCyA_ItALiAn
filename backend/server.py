@@ -151,24 +151,7 @@ OLLAMA_CONFIG = {
     "num_gpu": int(os.getenv('OLLAMA_NUM_GPU', '-1'))
 }
 
-# API Keys valide
-VALID_API_KEYS = {
-    "demo_key_123": {
-        "role": "demo",
-        "permissions": ["chat", "charts"],
-        "description": "Utente Demo"
-    },
-    "admin_key_456": {
-        "role": "admin",
-        "permissions": ["chat", "charts", "code", "admin"],
-        "description": "Amministratore"
-    },
-    "test_key_789": {
-        "role": "test",
-        "permissions": ["chat", "charts", "code"],
-        "description": "Testing"
-    }
-}
+
 
 def verify_api_key(api_key):
     """Verifica se l'API key è valida e restituisce le informazioni"""
@@ -184,25 +167,6 @@ def check_permission(api_key, permission):
         return False
 
     return permission in key_info["permissions"]
-
-# API Keys valide
-VALID_API_KEYS = {
-    "demo_key_123": {
-        "role": "demo",
-        "permissions": ["chat", "charts"],
-        "description": "Utente Demo"
-    },
-    "admin_key_456": {
-        "role": "admin",
-        "permissions": ["chat", "charts", "code", "admin"],
-        "description": "Amministratore"
-    },
-    "test_key_789": {
-        "role": "test",
-        "permissions": ["chat", "charts", "code"],
-        "description": "Testing"
-    }
-}
 
 SYSTEM_PROMPTS = {
     "finance": """You are an Italian financial consultant. Think and reason in English for accuracy and precision, but always respond to the user in Italian.
@@ -639,14 +603,31 @@ class AIHandler(http.server.BaseHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-API-Key, Authorization')
 
     def _extract_api_key(self):
-        """Estrae API key dagli header (Best Practice: Sicurezza)"""
-        # Priorità: X-API-Key > Authorization Bearer
+        """Estrae API key dagli header o parametri URL (Best Practice: Sicurezza)"""
+        # Priorità: X-API-Key > Authorization Bearer > Parametro URL (per compatibilità mobile)
         if 'X-API-Key' in self.headers:
             return self.headers['X-API-Key'].strip()
         elif 'Authorization' in self.headers:
             auth_header = self.headers['Authorization']
             if auth_header.startswith('Bearer '):
                 return auth_header[7:].strip()
+        else:
+            # Supporto per API key come parametro URL (utile per cellulari)
+            try:
+                parsed_url = urllib.parse.urlparse(self.path)
+                query_params = urllib.parse.parse_qs(parsed_url.query)
+                print(f"DEBUG: Parsed URL path: {self.path}")
+                print(f"DEBUG: Query params: {query_params}")
+                if 'api_key' in query_params:
+                    api_key_from_url = query_params['api_key'][0].strip()
+                    print(f"DEBUG: API key from URL: {api_key_from_url}")
+                    return api_key_from_url
+                else:
+                    print("DEBUG: No api_key found in URL parameters")
+            except Exception as e:
+                print(f"Errore parsing URL per API key: {e}")
+                import traceback
+                traceback.print_exc()
         return None
 
     def _send_auth_error(self, message):
@@ -664,6 +645,21 @@ class AIHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         print(f"GET request: {self.path}")
+        
+        # Verifica API Key per tutti gli endpoint (Best Practice: Sicurezza)
+        api_key = self._extract_api_key()
+        if not api_key:
+            self._send_auth_error("API Key richiesta")
+            return
+            
+        key_info = verify_api_key(api_key)
+        if not key_info:
+            self._send_auth_error("API Key non valida")
+            return
+        
+        # Log dell'accesso per audit (Best Practice: Logging)
+        print(f"[AUTH] Accesso consentito per key: {key_info['role']} - IP: {self.client_address[0]}")
+        
         if self.path == "/":
             self.send_response(200)
             self.send_header('Content-type', 'application/json')

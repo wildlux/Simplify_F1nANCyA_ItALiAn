@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Assistente AI (Test)
+Comment=Avvia l'Assistente AI - Versione Test
+Exec=/home/wildlux/Desktop/Assistente_Finanziario_AI/assistente-ai-completo/start_simple.sh
+Icon=/home/wildlux/Desktop/Assistente_Finanziario_AI/assistente-ai-completo/frontend/favicon.png
+Terminal=true
+Categories=Utility;
+Path=/home/wildlux/Desktop/Assistente_Finanziario_AI/assistente-ai-completo

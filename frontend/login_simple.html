@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login Semplice</title>
+    <style>
+        body { font-family: Arial; text-align: center; padding: 50px; }
+        button { padding: 15px 30px; font-size: 16px; cursor: pointer; }
+        #demoBtn { background: #4CAF50; color: white; border: none; }
+        #manualBtn { background: #2196F3; color: white; border: none; }
+        #result { margin: 20px; padding: 15px; border: 1px solid #ddd; }
+        .success { background: #dff0d8; color: #3c763d; }
+        .error { background: #f2dede; color: #a94442; }
+        input { padding: 10px; font-size: 16px; margin: 5px; }
+        .login-section { margin: 20px; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>🔓 Login Semplice</h1>
+    
+    <div>
+        <button id="demoBtn" onclick="useDemo()">📱 Demo (Android)</button>
+        <button id="manualBtn" onclick="useManual()">🔑 Manual</button>
+    </div>
+    
+    <div class="login-section">
+        <h3>Login con ID e Password</h3>
+        <div>
+            <label for="username">ID:</label>
+            <input type="text" id="username" placeholder="Inserisci il tuo ID">
+            <button onclick="fillUsername()">Compila ID</button>
+        </div>
+        <div>
+            <label for="password">Password:</label>
+            <input type="password" id="password" placeholder="Inserisci la password">
+            <button onclick="fillPassword()">Compila Password</button>
+        </div>
+        <button onclick="login()">Accedi</button>
+    </div>
+    
+    <div id="result">
+        Clicca un pulsante per accedere...
+    </div>
+    
+    <script>
+        const API_URL = 'http://192.168.1.165:65432';
+        
+        function showResult(message, isSuccess) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = message;
+            resultDiv.className = isSuccess ? 'success' : 'error';
+        }
+        
+        async function testConnection() {
+            try {
+                const response = await fetch(`${API_URL}/api/health?api_key=demo_key_123`, {
+                    mode: 'cors',
+                    cache: 'no-store'
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    return { success: true, data };
+                } else {
+                    const error = await response.text();
+                    return { success: false, error };
+                }
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        }
+        
+        async function useDemo() {
+            showResult('Test connessione al server...', false);
+            
+            const result = await testConnection();
+            
+            if (result.success) {
+                showResult(`✅ Connesso!\n\nServer: ${result.data.model}\nRuolo: ${result.data.key_info.role}`, true);
+                
+                // Reindirizza alla pagina principale dopo 1 secondo
+                setTimeout(() => {
+                    window.location.href = 'index.html?api_key=demo_key_123';
+                }, 1000);
+            } else {
+                showResult(`❌ Errore: ${result.error}\n\nProva a:\n1. Usare Chrome (non browser predefinito)\n2. Verificare la connessione WiFi\n3. Creare un hotspot dal cellulare`, false);
+            }
+        }
+        
+        function useManual() {
+            const key = prompt('Inserisci la tua API Key:');
+            if (key) {
+                window.location.href = `index.html?api_key=${encodeURIComponent(key)}`;
+            }
+        }
+        
+        function fillUsername() {
+            document.getElementById('username').value = 'demo_user';
+        }
+        
+        function fillPassword() {
+            document.getElementById('password').value = 'demo_password';
+        }
+        
+        function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            if (username && password) {
+                // Qui puoi aggiungere la logica per autenticare l'utente
+                // Per ora, reindirizziamo alla pagina principale con una chiave demo
+                showResult(`✅ Accesso effettuato come ${username}!`, true);
+                
+                setTimeout(() => {
+                    window.location.href = 'index.html?api_key=demo_key_123';
+                }, 1000);
+            } else {
+                showResult('❌ Inserisci ID e password', false);
+            }
+        }
+        
+        // Testa automaticamente all'avvio
+        window.addEventListener('load', () => {
+            console.log('Pagina di login semplificata caricata');
+        });
+    </script>
+</body>
+</html>
