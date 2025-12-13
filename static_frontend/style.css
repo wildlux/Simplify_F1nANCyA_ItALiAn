@@ -581,6 +581,10 @@ code {
     }
 
     .controls {
+        display: none !important;
+    }
+
+    .controls {
         justify-content: center;
         flex-wrap: wrap;
     }
