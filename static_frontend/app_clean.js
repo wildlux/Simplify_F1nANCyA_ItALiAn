@@ -13,7 +13,7 @@ let isConnected = false;
 let isListening = false;
 let recognition = null;
 let cancelController = null;
-let currentModel = 'llama3.2:3b';
+let currentModel = 'llama3.2:1b';
 let prompts = {
     general: "Sei un assistente AI utile. Rispondi in italiano.",
     math: "Sei un assistente matematico. Mostra i calcoli.",
